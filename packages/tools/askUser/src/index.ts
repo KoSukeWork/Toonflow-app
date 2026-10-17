@@ -22,8 +22,8 @@ const questionSchema = z.object({
   options: optionsSchema.max(8).optional(),
   fields: z.array(fieldSchema).max(12)
     .refine(fields => new Set(fields.map(field => field.field)).size === fields.length, "字段名不能重复").optional()
-    .describe("多个问题，每项一个问题；提供非空 fields 时不能同时提供顶层 options"),
-}).refine(request => !request.fields?.length || request.options === undefined, "动态表单不能同时提供顶层选项");
+    .describe("多个问题，每项一个问题；也可以同时提供顶层 options 作为补充选择"),
+});
 
 const plugin: ToolPlugin = {
   validateConfig(config) {

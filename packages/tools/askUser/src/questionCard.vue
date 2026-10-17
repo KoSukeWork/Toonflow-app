@@ -15,7 +15,7 @@
     <p v-else-if="question" class="questionText">{{ question }}</p>
     <template v-if="waiting">
       <form-create v-if="formRules.length" v-model="formValues" v-model:api="formApi" :rule="formRules" :option="formOptions" />
-      <template v-else>
+      <template v-if="options.length">
         <el-radio-group v-if="options.length" v-model="selected" class="questionOptions" :disabled="submitting" :aria-label="question">
           <el-radio v-for="option in options" :key="option" :value="option" border>{{ option }}</el-radio>
           <el-radio value="" border>自行填写</el-radio>
@@ -30,8 +30,19 @@
           aria-label="回答问题" />
         <el-text v-if="draftAnswer.length > 8000" type="danger">回答（含选项）不能超过 8000 字</el-text>
       </template>
+      <template v-else-if="!formRules.length">
+        <el-input
+          v-model="text"
+          type="textarea"
+          :autosize="{ minRows: 2, maxRows: 6 }"
+          :disabled="submitting"
+          :maxlength="8000"
+          placeholder="输入你的回答"
+          aria-label="回答问题" />
+        <el-text v-if="text.trim().length > 8000" type="danger">回答不能超过 8000 字</el-text>
+      </template>
       <div class="questionActions">
-        <el-button type="primary" :loading="submitting" :disabled="(!toolSessionId && !directory) || (formRules.length ? !formApi : !draftAnswer || draftAnswer.length > 8000)" @click="submitAnswer(false)">
+        <el-button type="primary" :loading="submitting" :disabled="(!toolSessionId && !directory) || (formRules.length ? !formApi || (options.length > 0 && (!draftAnswer || draftAnswer.length > 8000)) : !draftAnswer || draftAnswer.length > 8000)" @click="submitAnswer(false)">
           提交回答
         </el-button>
         <el-button :disabled="(!toolSessionId && !directory) || submitting" @click="submitAnswer(true)">跳过</el-button>
@@ -144,10 +155,11 @@ async function submitAnswer(skip: boolean) {
   submitting.value = true;
   try {
     if (!skip && formRules.value.length && !(await formApi.value?.validate().catch(() => false))) return;
+    if (!skip && formRules.value.length && options.value.length && (!draftAnswer.value || draftAnswer.value.length > 8000)) return;
     const response = await axios.post(props.toolSessionId ? "/api/singleAgent/answer" : "/api/agent/answer", {
       ...(props.toolSessionId ? { sessionId: props.toolSessionId } : { directory: props.directory }),
       callId,
-      ...(skip ? { skipped: true } : formRules.value.length ? { values: formApi.value!.formData() } : { answer: value }),
+      ...(skip ? { skipped: true } : formRules.value.length ? { values: formApi.value!.formData(), ...(options.value.length ? { answer: value } : {}) } : { answer: value }),
     }, { headers: { "x-toonflow-workspace": "1" } });
     if (response.data.code !== 200) throw new Error(response.data.message || "提交回答失败");
     submittedAnswer.value = response.data.data.answer;

@@ -566,6 +566,8 @@ function stopSenderResize(event: PointerEvent) {
 
 function stopMessage() {
   controller?.abort();
+  // 中止本地流时不会再收到服务端 done 事件，立即解除远程运行锁，避免界面一直要求等待当前回复。
+  remoteRunning.value = false;
 }
 
 async function uploadAttachments(attachments: AgentAttachment[], directory: string, signal: AbortSignal) {
@@ -738,6 +740,7 @@ async function sendMessage(source?: AgentMessage) {
     }
     if (ownsStream && !forwarded) stream.finish();
     compacting.value = false;
+    remoteRunning.value = false;
     busy.value = false;
     controller = undefined;
   }

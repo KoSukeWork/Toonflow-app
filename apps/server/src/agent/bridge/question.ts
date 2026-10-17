@@ -70,10 +70,15 @@ export function answerQuestion(cwd: string, callId: string, response: { answer?:
     const parsed = z.strictObject(shape).safeParse(response.values);
     if (!parsed.success) throw Object.assign(new Error("请按要求填写表单"), { status: 400 });
     const values = parsed.data as NonNullable<QuestionAnswer["values"]>;
-    const answer = fields.filter(field => values[field.field] !== undefined).map(field => {
+    const fieldsAnswer = fields.filter(field => values[field.field] !== undefined).map(field => {
       const value = values[field.field];
       return `${field.title}：${Array.isArray(value) ? value.join("、") : typeof value === "boolean" ? value ? "是" : "否" : value}`;
     }).join("\n");
+    const topAnswer = pending.request.options?.length
+      ? z.string().trim().max(8000).optional().safeParse(response.answer)
+      : { success: true as const, data: undefined };
+    if (!topAnswer.success) throw Object.assign(new Error("请输入回答"), { status: 400 });
+    const answer = [fieldsAnswer, topAnswer.data].filter(Boolean).join("\n");
     result = { answer: answer || "未填写可选项", values };
   } else {
     const parsed = z.string().trim().min(1).max(8000).safeParse(response.answer);

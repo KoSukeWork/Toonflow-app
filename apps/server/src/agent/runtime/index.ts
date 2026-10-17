@@ -343,6 +343,11 @@ export async function run(
               ? { ...tool, args: event.args, status: "running" }
               : { ...tool, status: event.isError ? "error" : "success", result: getToolResultText(event.result.content) },
         });
+        if (event.type === "tool_execution_end" && event.isError) {
+          // 工具失败交给模型后可能被原样重复调用；结束本轮，避免无界重试和前端一直等待。
+          modelError = getToolResultText(event.result.content) || `${event.toolName} 调用失败`;
+          void session.abort();
+        }
       }
       if (event.type === "tool_execution_update") {
         send({

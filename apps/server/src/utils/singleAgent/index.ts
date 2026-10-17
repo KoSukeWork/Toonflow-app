@@ -273,6 +273,7 @@ export async function run(options: {
           imageToolResults.delete(event.toolCallId);
           toolResults.push(result);
           send({ type: "toolResult", ...result });
+          if (event.isError) void active.session?.abort();
         }
       }
     });
