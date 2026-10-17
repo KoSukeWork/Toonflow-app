@@ -1,0 +1,13 @@
+services:
+  toonflow:
+    image: toonflow:arm64
+    platform: linux/arm64
+    init: true
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:6060:3000"
+    volumes:
+      - toonflowData:/app/data
+
+volumes:
+  toonflowData:

@@ -44,14 +44,20 @@ export function isMobileLinkRequest(req: Request) {
   return Boolean(req.res && Reflect.get(req.res.locals, deviceKey));
 }
 
+function isPrivateNetworkAddress(value: string | undefined) {
+  const address = value?.replace(/^::ffff:/, "");
+  return address === "127.0.0.1" || address === "::1" || /^10\./.test(address ?? "")
+    || /^192\.168\./.test(address ?? "") || /^172\.(1[6-9]|2\d|3[01])\./.test(address ?? "");
+}
+
 export function assertMobileLinkControl(req: Request) {
   const origin = `${req.protocol}://${req.get("host")}`;
   const sameOrigin = req.get("origin") === undefined ? req.get("referer")?.startsWith(`${origin}/`) : req.get("origin") === origin;
-  const localSocket = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
-  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname);
+  const localSocket = isPrivateNetworkAddress(req.socket.remoteAddress);
+  const localHost = ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname) || isPrivateNetworkAddress(req.hostname);
   if (isMobileLinkRequest(req) || !localSocket || !localHost || !sameOrigin ||
     (req.get("x-toonflow-mobile-link") !== "1" && req.get("x-toonflow-workspace") !== "1")) {
-    throw Object.assign(new Error("只允许本机 Toonflow 页面管理设备互联"), { status: 403 });
+    throw Object.assign(new Error("只允许本机或局域网 Toonflow 页面管理设备互联"), { status: 403 });
   }
   if (!getRuntime(req.app).supported) throw Object.assign(new Error("当前运行环境不支持共享后端"), { status: 403 });
 }
