@@ -51,7 +51,7 @@ function readInput(context: Context, request: ImageRequest) {
   const apiKey = typeof context.config.apiKey === "string" ? context.config.apiKey.trim() : "";
   if (apiKey.length < 24 || /\s/.test(apiKey)) throw new Error("请填写至少24个字符的原始API Key，不加Bearer前缀");
   if (request.model !== "imagine" && request.model !== "selectImage") throw new Error("请选择MJ生图或选图模型");
-  if (typeof request.prompt !== "string" || !request.prompt.trim()) throw new Error("请填写画图描述，或在选图模型中只填1～4");
+  if (typeof request.prompt !== "string" || !request.prompt.trim()) throw new Error("请填写画图描述，或在选图模型中填写U1～U4、V1～V4");
   if (request.images !== undefined && !Array.isArray(request.images)) throw new Error("连入图片须为数组");
   if (request.mask !== undefined) throw new Error("此供应商不支持蒙版");
   if (request.n !== undefined && request.n !== 1) throw new Error("两个模型每次都返回1张图片");
@@ -63,9 +63,11 @@ function readInput(context: Context, request: ImageRequest) {
   if (typeof context.tool.image !== "function") throw new Error("当前Toonflow宿主未提供图片处理能力");
   let prompt = request.prompt.trim();
   if (request.model === "selectImage") {
-    if (!/^[1-4]$/.test(prompt)) throw new Error("选图模型的提示词只能填写1、2、3或4");
-    if (request.images?.length !== 1) throw new Error("请连入生图模型返回的1张原始四宫格");
-    if (request.outputFormat !== undefined) throw new Error("选图模型保留MJ原始单图格式，不支持指定输出编码");
+    prompt = prompt.toUpperCase();
+    if (/^[1-4]$/.test(prompt)) prompt = "U" + prompt;
+    if (!/^[UV][1-4]$/.test(prompt)) throw new Error("选图模型只能填写U1～U4、V1～V4，或用1～4表示U选图");
+    if (request.images?.length !== 1) throw new Error("请连入生图模型或V变体返回的1张原始四宫格");
+    if (request.outputFormat !== undefined) throw new Error("U返回MJ原始单图，V返回携带任务记录的PNG四宫格，不支持指定输出编码");
   } else {
     if (request.images && request.images.length > 10) throw new Error("生图模型每次最多接收10张参考图");
     if (request.outputFormat !== undefined && request.outputFormat !== "png") throw new Error("生图模型固定返回携带任务记录的PNG");
@@ -163,9 +165,32 @@ function taskId(task: Record<string, unknown>): string {
   return task.task_id;
 }
 
-async function waitTask(connection: Connection, initial: Record<string, unknown>, parentId?: string, actionId?: string) {
+async function confirmVariation(connection: Connection, task: Record<string, unknown>) {
+  const modal = object(task.modal, "MJ变体弹窗");
+  if (modal.hasCanvas !== false || typeof modal.title !== "string" || !/remix|new\s+prompt|重混|新提示词|变体/i.test(modal.title)
+    || !Array.isArray(modal.fields) || modal.fields.length !== 1 || !Array.isArray(modal.buttons)) {
+    throw new Error("MJ变体出现无法自动确认的弹窗，请在桥接器处理原任务，勿重复提交");
+  }
+  const field = object(modal.fields[0], "MJ变体提示词");
+  const buttons = modal.buttons.filter(value => {
+    if (!value || typeof value !== "object") return false;
+    const button = value as Record<string, unknown>;
+    return button.enabled === true && button.visible === true && typeof button.label === "string" && /^(Submit|提交|确认)$/i.test(button.label);
+  });
+  if (typeof field.field_id !== "string" || !/^field_\d+$/.test(field.field_id) || !["text", "textarea", "contenteditable"].includes(String(field.type))
+    || typeof field.value !== "string" || !field.value.trim() || field.value.length > 8000 || buttons.length !== 1) {
+    throw new Error("MJ变体弹窗的原提示词或确认按钮无法确认，请在桥接器处理原任务，勿重复提交");
+  }
+  // ACT: V只沿用标准Remix弹窗的现有提示词；其他弹窗、画布和额外字段交给桥接器处理。
+  return requestJson(connection, "/v1/tasks/" + taskId(task) + "/input", {
+    fields: { [field.field_id]: field.value }, submitButton: object(buttons[0], "MJ确认按钮").label,
+  }, "toonflowMjRemix" + taskId(task));
+}
+
+async function waitTask(connection: Connection, initial: Record<string, unknown>, parentId?: string, actionId?: string, variation = false) {
   const id = taskId(initial);
   let task = initial;
+  let confirmed = false;
   while (true) {
     connection.signal.throwIfAborted();
     if (taskId(task) !== id || task.parent_task_id !== (parentId ?? null)) throw new Error("MJ返回了不匹配的任务或父任务");
@@ -179,6 +204,11 @@ async function waitTask(connection: Connection, initial: Record<string, unknown>
       return task;
     }
     if (task.status === "failed" || task.status === "cancelled") throw new Error("MJ任务失败或取消：" + (detail || String(task.status)));
+    if (task.status === "awaiting_input" && variation && !confirmed) {
+      confirmed = true;
+      task = await confirmVariation(connection, task);
+      continue;
+    }
     if (["awaiting_input", "awaiting_selection", "submission_unknown", "timed_out", "result_fetch_failed"].includes(String(task.status))) {
       throw new Error("MJ任务需要在桥接器控制台处理或对账：" + task.status + (detail ? "，" + detail : "") + "；不要重新提交");
     }
@@ -191,6 +221,16 @@ async function waitTask(connection: Connection, initial: Record<string, unknown>
     await waitForPoll(connection.signal);
     task = await requestJson(connection, "/v1/tasks/" + id);
   }
+}
+
+async function waitGridTask(connection: Connection, task: Record<string, unknown>) {
+  if (task.parent_task_id === null) return waitTask(connection, task);
+  const request = object(task.request, "MJ四宫格任务请求");
+  if (request.kind !== "action" || typeof request.action_label !== "string" || !/^V[1-4]$/.test(request.action_label)
+    || typeof request.action_id !== "string" || !/^action_[0-9a-f]{24}$/.test(request.action_id)) {
+    throw new Error("连入图片对应的任务不是imagine生图或V1～V4变体四宫格");
+  }
+  return waitTask(connection, task, taskId({ task_id: task.parent_task_id }), request.action_id);
 }
 
 async function requireReady(connection: Connection, references = false) {
@@ -211,7 +251,8 @@ function findAction(actions: unknown, label: string, actionable: boolean): Recor
   const matches = actions.filter(value => value && typeof value === "object" && (value as Record<string, unknown>).label === label);
   if (matches.length !== 1) throw new Error("MJ的" + label + "按钮不存在或不唯一，不能确认标准四宫格");
   const action = object(matches[0], "MJ按钮");
-  if (action.kind !== "upscale" || typeof action.action_id !== "string" || !/^action_[0-9a-f]{24}$/.test(action.action_id)) throw new Error("MJ的" + label + "不是有效选图动作");
+  const kind = label.startsWith("V") ? "variation" : "upscale";
+  if (action.kind !== kind || typeof action.action_id !== "string" || !/^action_[0-9a-f]{24}$/.test(action.action_id)) throw new Error("MJ的" + label + "不是有效选图或变体动作");
   if (actionable && (action.enabled !== true || action.visible !== true)) throw new Error("MJ的" + label + "按钮当前不可用");
   return action;
 }
@@ -310,6 +351,15 @@ async function gridPng(imageTool: ImageTool, bytes: Uint8Array, signal: AbortSig
   return result;
 }
 
+async function recordedGrid(connection: Connection, task: Record<string, unknown>): Promise<MediaAsset> {
+  for (const label of ["U1", "U2", "U3", "U4"]) findAction(task.actions, label, false);
+  const image = await downloadImage(connection, task);
+  const png = await gridPng(connection.tool.image, image.data, connection.signal);
+  const data = writeGridRecord(png, taskId(task));
+  connection.signal.throwIfAborted();
+  return { mediaType: "image", type: "binary", data, mimeType: "image/png" };
+}
+
 async function referenceBytes(connection: Connection, input: MediaInput, maxBytes = maxImageBytes): Promise<Uint8Array> {
   connection.signal.throwIfAborted();
   if (!input || typeof input !== "object") throw new Error("连入图片无效");
@@ -403,9 +453,9 @@ function requireReferences(task: Record<string, unknown>, expected: ImageReferen
 
 export default {
   "id": "mj",
-  "label": "MJ（生图与选图）",
-  "version": "2.2.0",
-  "readme": "一个供应商、两个模型，共用可配置的服务地址和API Key。节点A选择“生图”，填写画图描述，可连入最多10张普通参考图，通过新版API的imageReferences按顺序提交，返回完整四宫格PNG。HTTPS图片直链直接提交；Base64、二进制及HTTP图片先上传，上传图片须为PNG、JPEG或WebP，单张最多20 MiB。参考图可混用上述来源；桥接器账号需要有发送消息和附加文件权限，使用参考图前会检查API是否声明支持该能力。任务返回的参考图列表须与提交的数量、顺序和内容一致。PNG文件的toonflowMj文本元信息记录原MJ任务号，不含密钥。把A的图片输出连入节点B，B选择“选图”，提示词只填1、2、3或4，对应左上、右上、左下、右下；B从连入PNG读取任务号，核对图片与桥接器原任务匹配，再只执行对应的一个U动作并返回原生单图，不新建imagine任务。生成模型不裁切四宫格，选图模型不一次执行全部U，也不自动执行后续Upscale。记录随图片文件保留，不依赖全局变量或进程内最近任务；桥接器仍须保留原任务及图片，客户端须能访问原频道与消息。连接原始输出；截图、裁切、重新压缩、替换图片等操作可能丢失或破坏关联，将报错而不重新生图。图片信息中的任务号只用于配置的桥接器，外部图片地址不接收MJ密钥。两个模型每次均返回1张；仅1:1，尺寸默认，MJ模型、频道及其他设置沿用桥接器和原客户端，不承诺2K/4K或U操作一定增加像素。PNG处理上限2500万像素，输出及选图输入上限100 MiB。参考图链接与描述合并后的提示词受MJ的8000字符上限限制。生成和选图提交有幂等键，上传及任务均不自动重试；遇弹窗、待对账或下载失败时停止并报告任务编号。每个HTTP请求最多120秒，整体最多2小时；取消或超时只停止本地等待，已提交的MJ任务可能继续。",
+  "label": "MJ（生图、选图与变体）",
+  "version": "2.3.0",
+  "readme": "一个供应商、两个模型，共用可配置的服务地址和API Key。节点A选择“生图”，填写画图描述，可连入最多10张普通参考图，通过新版API的imageReferences按顺序提交，返回完整四宫格PNG。HTTPS图片直链直接提交；Base64、二进制及HTTP图片先上传，上传图片须为PNG、JPEG或WebP，单张最多20 MiB。参考图可混用上述来源；桥接器账号需要有发送消息和附加文件权限，使用参考图前会检查API是否声明支持该能力。任务返回的参考图列表须与提交的数量、顺序和内容一致。PNG文件的toonflowMj文本元信息记录对应MJ任务号，不含密钥。把A的图片输出连入节点B，B选择“选图／变体”：提示词填U1～U4选出对应原生单图，数字1～4仍等同U1～U4；填V1～V4对对应位置生成变体，返回新的完整四宫格PNG并记录新的变体任务号，可继续连入此模型执行U或V。位置1～4依次为左上、右上、左下、右下；字母不区分大小写，其他文字报错。每次只执行指定的一个U或V按钮，不新建imagine任务。标准Remix改词弹窗保持弹窗原提示词确认一次；遇画布、未知弹窗或额外字段时停止并报告任务号，请在桥接器处理原任务，不要重复提交。四宫格不裁切，不自动执行后续Upscale。记录随图片文件保留，不依赖全局变量或进程内最近任务；桥接器仍须保留对应任务及图片，客户端须能访问原频道与消息。连接原始输出；截图、裁切、重新压缩、替换图片等操作可能丢失或破坏关联，将报错而不重新生图。图片信息中的任务号只用于配置的桥接器，外部图片地址不接收MJ密钥。两个模型每次均返回1张图片文件，V的结果为一张四宫格；仅1:1，尺寸默认，MJ模型、频道及其他设置沿用桥接器和原客户端，不承诺2K/4K或U操作一定增加像素。PNG处理上限2500万像素，输出及选图输入上限100 MiB。参考图链接与描述合并后的提示词受桥接器的8000字符上限限制。生成和动作提交有幂等键，上传及任务均不自动重试；遇待对账或下载失败时停止并报告任务编号。每个HTTP请求最多120秒，整体最多2小时；取消或超时只停止本地等待，已提交的MJ任务可能继续。",
   "rules": [
     {
       "type": "input",
@@ -477,7 +527,7 @@ export default {
     },
     {
       "id": "selectImage",
-      "label": "2. 选图（连接四宫格，输入1～4）",
+      "label": "2. 选图／变体（U1～U4、V1～V4）",
       "type": "image",
       "mode": [
         "singleImage"
@@ -507,14 +557,9 @@ export default {
         const id = taskId(submitted);
         tasks.push(id);
         requireReferences(submitted, imageReferences);
-        const grid = await waitTask(connection, submitted);
+        const grid = await waitGridTask(connection, submitted);
         requireReferences(grid, imageReferences);
-        for (const label of ["U1", "U2", "U3", "U4"]) findAction(grid.actions, label, false);
-        const image = await downloadImage(connection, grid);
-        const png = await gridPng(this.tool.image, image.data, signal);
-        const data = writeGridRecord(png, id);
-        signal.throwIfAborted();
-        return [{ mediaType: "image", type: "binary", data, mimeType: "image/png" }];
+        return [await recordedGrid(connection, grid)];
       }
       const bytes = await referenceBytes(connection, request.images![0]);
       const record = readGridRecord(bytes);
@@ -523,7 +568,8 @@ export default {
       await requireReady(connection);
       const parent = await requestJson(connection, "/v1/tasks/" + parentId);
       if (taskId(parent) !== parentId || parent.status !== "succeeded") throw new Error("图片对应的原MJ任务尚未完成或已不可用，请先在桥接器核实");
-      const grid = await waitTask(connection, parent);
+      const grid = await waitGridTask(connection, parent);
+      for (const label of ["U1", "U2", "U3", "U4"]) findAction(grid.actions, label, false);
       const original = await downloadImage(connection, grid);
       const expected = await gridPng(this.tool.image, original.data, signal);
       const connected = await gridPng(this.tool.image, record.png, signal);
@@ -531,14 +577,15 @@ export default {
       if (!Buffer.from(connected).equals(Buffer.from(expected))) throw new Error("连入图片与原MJ四宫格不匹配，请连接生图模型的原始输出");
       const controls = await requestJson(connection, "/v1/tasks/" + parentId + "/actions");
       if (taskId(controls) !== parentId) throw new Error("MJ按钮列表不属于连入图片的原任务");
-      const action = findAction(controls.actions, "U" + settings.prompt, true);
+      const action = findAction(controls.actions, settings.prompt, true);
       const actionId = action.action_id as string;
       const key = "toonflowMjSelect" + parentId + actionId;
       const submitted = await requestJson(connection, "/v1/tasks/" + parentId + "/actions",
         { action_id: actionId, expect: "image" }, key);
       tasks.push(taskId(submitted));
-      const child = await waitTask(connection, submitted, parentId, actionId);
-      const selected = await downloadImage(connection, child);
+      const variation = settings.prompt.startsWith("V");
+      const child = await waitTask(connection, submitted, parentId, actionId, variation);
+      const selected = variation ? await recordedGrid(connection, child) : await downloadImage(connection, child);
       signal.throwIfAborted();
       return [selected];
     } catch (error) {
