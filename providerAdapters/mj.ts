@@ -110,6 +110,7 @@ async function responseBytes(response: Response, signal: AbortSignal, maxBytes: 
 async function bridgeRequest(connection: Connection, path: string, body?: unknown, key?: string, image = false) {
   const upload = body instanceof Blob;
   if (body !== undefined && !key && !upload) throw new Error("提交MJ操作必须提供幂等键");
+  const method = body === undefined ? "GET" : "POST";
   const controller = new AbortController();
   const signal = AbortSignal.any([connection.signal, controller.signal]);
   const timeout = setTimeout(() => controller.abort(), 120_000);
@@ -119,13 +120,13 @@ async function bridgeRequest(connection: Connection, path: string, body?: unknow
     if (body !== undefined) headers["Content-Type"] = upload ? body.type : "application/json";
     if (key) headers["Idempotency-Key"] = key;
     const response = await connection.tool.fetch(connection.baseUrl + path, {
-      method: body === undefined ? "GET" : "POST", headers,
+      method, headers,
       body: upload ? body : body === undefined ? undefined : JSON.stringify(body), redirect: "error", signal,
     });
     const bytes = await responseBytes(response, signal, response.ok ? image ? maxImageBytes : 1024 * 1024 : 16 * 1024, !response.ok);
     if (!response.ok) {
       const detail = connection.tool.errorMessage(new TextDecoder().decode(bytes));
-      throw new Error("MJ接口请求失败：HTTP " + response.status + (detail ? "，" + detail : ""));
+      throw new Error("MJ接口请求失败：HTTP " + response.status + "（" + method + " " + path.split("?")[0] + "）" + (detail ? "，" + detail : ""));
     }
     const mimeType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "";
     if (image && (!bytes.byteLength || !["image/png", "image/jpeg", "image/webp"].includes(mimeType))) throw new Error("MJ未返回有效的PNG、JPEG或WebP图片");
@@ -454,7 +455,7 @@ function requireReferences(task: Record<string, unknown>, expected: ImageReferen
 export default {
   "id": "mj",
   "label": "MJ（生图、选图与变体）",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "readme": "一个供应商、两个模型，共用可配置的服务地址和API Key。节点A选择“生图”，填写画图描述，可连入最多10张普通参考图，通过新版API的imageReferences按顺序提交，返回完整四宫格PNG。HTTPS图片直链直接提交；Base64、二进制及HTTP图片先上传，上传图片须为PNG、JPEG或WebP，单张最多20 MiB。参考图可混用上述来源；桥接器账号需要有发送消息和附加文件权限，使用参考图前会检查API是否声明支持该能力。任务返回的参考图列表须与提交的数量、顺序和内容一致。PNG文件的toonflowMj文本元信息记录对应MJ任务号，不含密钥。把A的图片输出连入节点B，B选择“选图／变体”：提示词填U1～U4选出对应原生单图，数字1～4仍等同U1～U4；填V1～V4对对应位置生成变体，返回新的完整四宫格PNG并记录新的变体任务号，可继续连入此模型执行U或V。位置1～4依次为左上、右上、左下、右下；字母不区分大小写，其他文字报错。每次只执行指定的一个U或V按钮，不新建imagine任务。标准Remix改词弹窗保持弹窗原提示词确认一次；遇画布、未知弹窗或额外字段时停止并报告任务号，请在桥接器处理原任务，不要重复提交。四宫格不裁切，不自动执行后续Upscale。记录随图片文件保留，不依赖全局变量或进程内最近任务；桥接器仍须保留对应任务及图片，客户端须能访问原频道与消息。连接原始输出；截图、裁切、重新压缩、替换图片等操作可能丢失或破坏关联，将报错而不重新生图。图片信息中的任务号只用于配置的桥接器，外部图片地址不接收MJ密钥。两个模型每次均返回1张图片文件，V的结果为一张四宫格；仅1:1，尺寸默认，MJ模型、频道及其他设置沿用桥接器和原客户端，不承诺2K/4K或U操作一定增加像素。PNG处理上限2500万像素，输出及选图输入上限100 MiB。参考图链接与描述合并后的提示词受桥接器的8000字符上限限制。生成和动作提交有幂等键，上传及任务均不自动重试；遇待对账或下载失败时停止并报告任务编号。每个HTTP请求最多120秒，整体最多2小时；取消或超时只停止本地等待，已提交的MJ任务可能继续。",
   "rules": [
     {
