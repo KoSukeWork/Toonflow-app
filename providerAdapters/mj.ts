@@ -20,6 +20,7 @@ type ImageRequest = {
   other?: Record<string, unknown>;
 };
 type MediaAsset = { mediaType: "image"; type: "binary"; data: Uint8Array; mimeType: string };
+type ImageReference = string | { uploadId: string };
 
 type Context = {
   config: { baseUrl?: string; apiKey?: string };
@@ -66,7 +67,7 @@ function readInput(context: Context, request: ImageRequest) {
     if (request.images?.length !== 1) throw new Error("请连入生图模型返回的1张原始四宫格");
     if (request.outputFormat !== undefined) throw new Error("选图模型保留MJ原始单图格式，不支持指定输出编码");
   } else {
-    if (request.images && request.images.length > 1) throw new Error("生图模型每次最多接收1张参考图");
+    if (request.images && request.images.length > 10) throw new Error("生图模型每次最多接收10张参考图");
     if (request.outputFormat !== undefined && request.outputFormat !== "png") throw new Error("生图模型固定返回携带任务记录的PNG");
     const ratios = [...prompt.matchAll(/(?:^|\s)--ar\s+([^\s]+)/gi)];
     const flags = [...prompt.matchAll(/(?:^|\s)--ar\b/gi)];
@@ -192,13 +193,17 @@ async function waitTask(connection: Connection, initial: Record<string, unknown>
   }
 }
 
-async function requireReady(connection: Connection) {
+async function requireReady(connection: Connection, references = false) {
   const health = await requestJson(connection, "/health");
   const client = object(health.client, "MJ客户端状态");
   const queue = object(health.queue, "MJ队列状态");
   if (health.service !== "mj-desktop-api-bridge" || health.authenticated !== true) throw new Error("地址不是已认证的MJ桥接器");
   if (client.ready !== true) throw new Error("MJ客户端未就绪：" + (connection.tool.errorMessage(client.message) || "请在桥接器处理登录和频道状态"));
   if (queue.paused === true || queue.blocked_task) throw new Error("MJ队列已暂停或有待处理任务，请先在桥接器控制台处理");
+  if (references && (!health.capabilities || typeof health.capabilities !== "object"
+    || (health.capabilities as Record<string, unknown>).image_references !== true)) {
+    throw new Error("当前MJ桥接器未声明支持imageReferences，请先更新API，未提交生图");
+  }
 }
 
 function findAction(actions: unknown, label: string, actionable: boolean): Record<string, unknown> {
@@ -344,14 +349,22 @@ async function referenceBytes(connection: Connection, input: MediaInput, maxByte
 }
 
 /**
- * 参考图对接约定：复用现有二进制上传接口，返回 upload_id 后提交
- * { command: "imagine", parameters: { prompt: "描述 --ar 1:1", image: { uploadId: "upload_<UUID>" } }, expect: "image" }。
- * image 是本适配器约定的 imagine 图片提示输入；桥接器 v1.2.0 仅验证了 describe 的同名文件参数，
- * 尚未验证 imagine。API 端需将该上传内容应用到 MJ 的图片提示，再提交生成，不能只附上文件或忽略它。
- * 无法应用参考图时必须停止并返回明确错误，不得退回纯文生图，也不改用 describe 或 blend。
- * 提交响应和完成响应的 request.parameters.image.uploadId 须保留原值；后续四宫格、U按钮协议不变。
+ * 按桥接器 src/references.mjs 和 README 的协议提交：
+ * { command: "imagine", prompt: "描述 --ar 1:1", imageReferences: ["HTTPS图片直链", { uploadId: "upload_<UUID>" }], expect: "image" }。
+ * 最多10张，顺序不变；HTTPS直链直接交给MJ读取，其余输入先通过 /v1/uploads 上传原始图片字节。
+ * 桥接器将上传文件发送到目标频道并取得附件链接，再加入imagine提示词，需要账号有发送消息与附件权限。
+ * 提交响应和完成响应在 request.imageReferences 保留有序参考列表，后续四宫格、U按钮协议不变。
  */
-async function uploadReference(connection: Connection, input: MediaInput): Promise<string> {
+async function prepareReference(connection: Connection, input: MediaInput): Promise<ImageReference> {
+  connection.signal.throwIfAborted();
+  if (input?.type === "url" && typeof input.url === "string" && URL.canParse(input.url)) {
+    const url = new URL(input.url);
+    if (url.protocol === "https:") {
+      if (url.username || url.password || /[\s\u0000-\u001f\u007f]/.test(input.url)
+        || url.href.length > 2048) throw new Error("HTTPS参考图须为不含账号密码或空白、最多2048字符的图片直链");
+      return url.href;
+    }
+  }
   const bytes = await referenceBytes(connection, input, maxUploadBytes);
   const head = Buffer.from(bytes.subarray(0, 12));
   let extension: string;
@@ -372,24 +385,27 @@ async function uploadReference(connection: Connection, input: MediaInput): Promi
     new Blob([new Uint8Array(bytes)], { type: mimeType }));
   if (typeof uploaded.upload_id !== "string" || !/^upload_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(uploaded.upload_id)
     || uploaded.bytes !== bytes.byteLength) throw new Error("MJ上传接口未返回匹配的图片编号或字节数，未提交生图");
-  return uploaded.upload_id;
+  return { uploadId: uploaded.upload_id };
 }
 
-function requireReference(task: Record<string, unknown>, uploadId?: string) {
-  if (!uploadId) return;
+function requireReferences(task: Record<string, unknown>, expected: ImageReference[]) {
+  if (!expected.length) return;
   const request = object(task.request, "MJ任务请求");
-  const parameters = object(request.parameters, "MJ任务参数");
-  const image = parameters.image;
-  if (!image || typeof image !== "object" || Array.isArray(image) || (image as Record<string, unknown>).uploadId !== uploadId) {
-    throw new Error("MJ任务未保留参考图参数；请让API端支持imagine的parameters.image.uploadId，并核实已创建任务，勿重复提交");
+  const references = request.imageReferences;
+  if (!Array.isArray(references) || references.length !== expected.length || expected.some((reference, index) => {
+    const actual = references[index];
+    return typeof reference === "string" ? actual !== reference
+      : !actual || typeof actual !== "object" || Array.isArray(actual) || actual.uploadId !== reference.uploadId;
+  })) {
+    throw new Error("MJ任务的imageReferences与提交的参考图数量、顺序或内容不一致；请核实已创建任务，勿重复提交");
   }
 }
 
 export default {
   "id": "mj",
   "label": "MJ（生图与选图）",
-  "version": "2.1.0",
-  "readme": "一个供应商、两个模型，共用可配置的服务地址和API Key。节点A选择“生图”，填写画图描述，可连入1张PNG、JPEG或WebP参考图（最多20 MiB，支持URL、Base64和二进制输入），返回完整四宫格PNG；文件的toonflowMj文本元信息记录原MJ任务号，不含密钥。参考图要求API端接通imagine图片提示，当前桥接器仓库仅验证了上传和图片识别，尚未实测参考图生成；具体对接约定写在此文件uploadReference函数上方，API不支持时应报错，不能退回纯文生图。把A的图片输出连入节点B，B选择“选图”，提示词只填1、2、3或4，对应左上、右上、左下、右下；B从连入PNG读取任务号，核对图片与桥接器原任务匹配，再只执行对应的一个U动作并返回原生单图，不新建imagine任务。生成模型不裁切四宫格，选图模型不一次执行全部U，也不自动执行后续Upscale。记录随图片文件保留，不依赖全局变量或进程内最近任务；桥接器仍须保留原任务及图片，客户端须能访问原频道与消息。连接原始输出；截图、裁切、重新压缩、替换图片等操作可能丢失或破坏关联，将报错而不重新生图。图片信息中的任务号只用于配置的桥接器，外部图片地址不接收MJ密钥。两个模型每次均返回1张；首版仅1:1，尺寸默认，MJ模型、频道及其他设置沿用桥接器和原客户端，不承诺2K/4K或U操作一定增加像素。PNG处理上限2500万像素，输出及选图输入上限100 MiB。生成和选图提交有幂等键，上传及任务均不自动重试；遇弹窗、待对账或下载失败时停止并报告任务编号。每个HTTP请求最多120秒，整体最多2小时；取消或超时只停止本地等待，已提交的MJ任务可能继续。",
+  "version": "2.2.0",
+  "readme": "一个供应商、两个模型，共用可配置的服务地址和API Key。节点A选择“生图”，填写画图描述，可连入最多10张普通参考图，通过新版API的imageReferences按顺序提交，返回完整四宫格PNG。HTTPS图片直链直接提交；Base64、二进制及HTTP图片先上传，上传图片须为PNG、JPEG或WebP，单张最多20 MiB。参考图可混用上述来源；桥接器账号需要有发送消息和附加文件权限，使用参考图前会检查API是否声明支持该能力。任务返回的参考图列表须与提交的数量、顺序和内容一致。PNG文件的toonflowMj文本元信息记录原MJ任务号，不含密钥。把A的图片输出连入节点B，B选择“选图”，提示词只填1、2、3或4，对应左上、右上、左下、右下；B从连入PNG读取任务号，核对图片与桥接器原任务匹配，再只执行对应的一个U动作并返回原生单图，不新建imagine任务。生成模型不裁切四宫格，选图模型不一次执行全部U，也不自动执行后续Upscale。记录随图片文件保留，不依赖全局变量或进程内最近任务；桥接器仍须保留原任务及图片，客户端须能访问原频道与消息。连接原始输出；截图、裁切、重新压缩、替换图片等操作可能丢失或破坏关联，将报错而不重新生图。图片信息中的任务号只用于配置的桥接器，外部图片地址不接收MJ密钥。两个模型每次均返回1张；仅1:1，尺寸默认，MJ模型、频道及其他设置沿用桥接器和原客户端，不承诺2K/4K或U操作一定增加像素。PNG处理上限2500万像素，输出及选图输入上限100 MiB。参考图链接与描述合并后的提示词受MJ的8000字符上限限制。生成和选图提交有幂等键，上传及任务均不自动重试；遇弹窗、待对账或下载失败时停止并报告任务编号。每个HTTP请求最多120秒，整体最多2小时；取消或超时只停止本地等待，已提交的MJ任务可能继续。",
   "rules": [
     {
       "type": "input",
@@ -449,7 +465,8 @@ export default {
       "type": "image",
       "mode": [
         "text",
-        "singleImage"
+        "singleImage",
+        "multiReference"
       ],
       "imageSizes": [
         "默认"
@@ -482,17 +499,16 @@ export default {
     const tasks: string[] = [];
     try {
       if (request.model === "imagine") {
-        await requireReady(connection);
-        const uploadId = request.images?.length ? await uploadReference(connection, request.images[0]) : undefined;
-        const parameters: Record<string, unknown> = { prompt: settings.prompt };
-        if (uploadId) parameters.image = { uploadId };
+        await requireReady(connection, Boolean(request.images?.length));
+        const imageReferences: ImageReference[] = [];
+        for (const input of request.images ?? []) imageReferences.push(await prepareReference(connection, input));
         const key = "toonflowMjGrid" + Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-        const submitted = await requestJson(connection, "/v1/tasks", { command: "imagine", parameters, expect: "image" }, key);
+        const submitted = await requestJson(connection, "/v1/tasks", { command: "imagine", prompt: settings.prompt, imageReferences, expect: "image" }, key);
         const id = taskId(submitted);
         tasks.push(id);
-        requireReference(submitted, uploadId);
+        requireReferences(submitted, imageReferences);
         const grid = await waitTask(connection, submitted);
-        requireReference(grid, uploadId);
+        requireReferences(grid, imageReferences);
         for (const label of ["U1", "U2", "U3", "U4"]) findAction(grid.actions, label, false);
         const image = await downloadImage(connection, grid);
         const png = await gridPng(this.tool.image, image.data, signal);
