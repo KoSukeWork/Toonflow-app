@@ -12,7 +12,4 @@ services:
       TOONFLOW_ADMIN_PASSWORD: "${TOONFLOW_ADMIN_PASSWORD:-}"
       TOONFLOW_SECURE_COOKIES: "${TOONFLOW_SECURE_COOKIES:-0}"
     volumes:
-      - toonflowData:/app/data
-
-volumes:
-  toonflowData:
+      - ./data:/app/data
