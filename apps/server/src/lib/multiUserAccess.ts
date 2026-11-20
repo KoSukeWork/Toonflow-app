@@ -57,6 +57,8 @@ const adminRoutes = new Set([
   "GET /api/auth/members",
   "POST /api/auth/createMember",
   "POST /api/projects/register",
+  "GET /api/projects/ownership",
+  "PUT /api/projects/transferOwnership",
   "PUT /api/assets/save",
   "POST /api/assets/mkdir",
   "POST /api/assets/rename",

@@ -94,7 +94,7 @@
     <settings v-model="settingsVisible" />
     <mobileConnect v-if="!authState.enabled" v-model="mobileConnectVisible" />
     <workspacePicker v-if="!authState.enabled" ref="relocationPicker" hideTrigger />
-    <accountManagement v-if="authState.user?.role === 'admin'" v-model="accountsVisible" @registered="loadRegisteredProjects" />
+    <accountManagement v-if="authState.user?.role === 'admin'" v-model="accountsVisible" @projectsChanged="loadRegisteredProjects" />
     <projectSharing v-if="sharedProject?.id" :projectId="sharedProject.id" :name="sharedProject.name" @close="sharedProject = undefined" />
   </el-container>
 </template>

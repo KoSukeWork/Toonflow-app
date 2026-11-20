@@ -8,3 +8,8 @@ export type RegisteredProject = {
   name: string;
   lastOpenedAt: number;
 };
+
+export type ProjectOwnership = Pick<RegisteredProject, "id" | "directory" | "name"> & {
+  ownerId: string;
+  ownerUsername: string;
+};

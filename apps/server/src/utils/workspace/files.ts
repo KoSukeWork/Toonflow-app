@@ -2,6 +2,7 @@ import { constants, copyFile, cp, lstat, mkdir, rename, unlink, realpath, writeA
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { Request } from "express";
 import { resolveWorkspace } from "@/utils/workspace";
+import { assertCurrentProjectRequest } from "@/utils/projects";
 
 export async function writeWorkspaceFile(path: string, content: string | Uint8Array, exclusive = false) {
   await writeAtomic(path, content, { exclusive });
@@ -84,6 +85,7 @@ export async function resolveWorkspacePath(root: string, path: string, allowMiss
 // ACT: 桌面和独立 Server 均为单进程；锁防止并发文件操作互相覆盖。
 const busyFiles = new Set<string>();
 export function lockWorkspaceFiles(paths: string[]) {
+  assertCurrentProjectRequest();
   const keys = paths.map(path => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path));
   if (keys.some(path => [...busyFiles].some(busy => isWithin(path, busy) || isWithin(busy, path)))) {
     throw Object.assign(new Error("文件正在使用，请等待操作完成"), { status: 409, code: "EBUSY" });

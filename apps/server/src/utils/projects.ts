@@ -3,9 +3,9 @@ import { basename, isAbsolute, relative, resolve } from "node:path";
 import { lstat, mkdir, realpath, rmdir, unlink, writeAtomic } from "@toonflow/file";
 import type { Express, Request, Response } from "express";
 import { z } from "zod";
-import { getAccountDatabase, requireRequestUser } from "@/utils/auth";
+import { getAccountDatabase, getCurrentRequest, requireRequestUser } from "@/utils/auth";
 import { isWithin, lockWorkspaceFiles } from "@/utils/workspace/files";
-import type { RegisteredProject } from "@/types/auth";
+import type { ProjectOwnership, RegisteredProject } from "@/types/auth";
 
 export const projectNameSchema = z.string().trim().min(1).max(128);
 
@@ -37,7 +37,8 @@ async function verifyDirectory(root: string, directory: string) {
   return absolutePath;
 }
 
-const memberRequests = new Map<string, Set<Response>>();
+const projectRequests = new Map<string, Set<Response>>();
+const revokedProjectResponses = new WeakSet<Response>();
 const projectSelection = `SELECT p.id, p.directory, p.name, m.lastOpenedAt,
   CASE WHEN p.ownerId = m.userId THEN 'owner' ELSE 'editor' END AS accessRole
   FROM projects p JOIN projectMembers m ON m.projectId = p.id WHERE m.userId = ?`;
@@ -50,16 +51,20 @@ export async function resolveProjectDirectory(request: Request, path: string) {
     .get(user.id, directoryKey(relative(root, path)));
   if (!project) throw projectUnavailable();
   const response = request.res;
-  if (project.accessRole === "editor" && response) {
+  if (response && !response.destroyed) {
     const key = project.id + ":" + user.id;
-    const active = memberRequests.get(key) ?? new Set<Response>();
+    const active = projectRequests.get(key) ?? new Set<Response>();
     if (!active.has(response)) {
       active.add(response);
-      memberRequests.set(key, active);
-      response.once("close", () => {
+      projectRequests.set(key, active);
+      const release = () => {
+        response.off("finish", release);
+        response.off("close", release);
         active.delete(response);
-        if (!active.size && memberRequests.get(key) === active) memberRequests.delete(key);
-      });
+        if (!active.size && projectRequests.get(key) === active) projectRequests.delete(key);
+      };
+      response.once("finish", release);
+      response.once("close", release);
     }
   }
   const directory = await verifyDirectory(root, project.directory);
@@ -164,7 +169,56 @@ export function unshareProject(request: Request, id: string, userId: string) {
   const db = ownedProjectDatabase(request, id);
   if (requireRequestUser(request).id === userId) throw Object.assign(new Error("无法移除项目所有者"), { status: 400 });
   db.query("DELETE FROM projectMembers WHERE projectId = ? AND userId = ?").run(id, userId);
-  for (const response of memberRequests.get(id + ":" + userId) ?? []) response.destroy();
+  cancelProjectRequests(id, userId);
+}
+
+function cancelProjectRequests(projectId: string, userId: string) {
+  for (const response of projectRequests.get(projectId + ":" + userId) ?? []) {
+    revokedProjectResponses.add(response);
+    response.destroy();
+  }
+}
+
+export function assertCurrentProjectRequest() {
+  const response = getCurrentRequest()?.res;
+  if (response && revokedProjectResponses.has(response)) throw projectUnavailable();
+}
+
+function projectAdminDatabase(request: Request) {
+  if (requireRequestUser(request).role !== "admin") throw Object.assign(new Error("仅管理员可以管理项目归属"), { status: 403 });
+  return getAccountDatabase(request);
+}
+
+const ownershipSelection = `SELECT p.id, p.directory, p.name, p.ownerId, u.username AS ownerUsername
+  FROM projects p JOIN users u ON u.id = p.ownerId`;
+
+export function listProjectOwnership(request: Request) {
+  return projectAdminDatabase(request).query<ProjectOwnership, []>(
+    ownershipSelection + " ORDER BY p.name COLLATE NOCASE, p.directory",
+  ).all();
+}
+
+export function transferProjectOwnership(request: Request, id: string, expectedOwnerId: string, newOwnerId: string): ProjectOwnership {
+  const db = projectAdminDatabase(request);
+  const project = db.query<ProjectOwnership, [string]>(ownershipSelection + " WHERE p.id = ?").get(id);
+  if (!project) throw projectUnavailable();
+  if (project.ownerId === newOwnerId) return project;
+  if (project.ownerId !== expectedOwnerId) throw Object.assign(new Error("项目所有者已经变更，请刷新后重新选择"), { status: 409 });
+  const next = db.query<{ username: string }, [string]>("SELECT username FROM users WHERE id = ?").get(newOwnerId);
+  if (!next) throw Object.assign(new Error("指定的账号不存在"), { status: 404 });
+
+  // ACT: 文件操作占用工程时由锁返回 409；归属和成员记录在同一次事务提交。
+  const release = lockWorkspaceFiles([resolve(projectRoot(request), project.directory)]);
+  try {
+    db.transaction(() => {
+      db.query("UPDATE projects SET ownerId = ? WHERE id = ?").run(newOwnerId, id);
+      db.query("INSERT OR IGNORE INTO projectMembers(projectId, userId) VALUES (?, ?)").run(id, newOwnerId);
+      db.query("DELETE FROM projectMembers WHERE projectId = ? AND userId = ?").run(id, project.ownerId);
+    })();
+    cancelProjectRequests(id, project.ownerId);
+  } finally { release(); }
+
+  return { ...project, ownerId: newOwnerId, ownerUsername: next.username };
 }
 
 export function renameProject(request: Request, id: string, name: string) {

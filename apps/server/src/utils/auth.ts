@@ -13,7 +13,7 @@ export type { AuthUser } from "@/types/auth";
 const cookieName = "toonflowSession";
 const sessionDuration = 7 * 24 * 60 * 60 * 1000;
 const requestUsers = new WeakMap<Request, AuthUser>();
-const currentUser = new AsyncLocalStorage<AuthUser>();
+const currentRequest = new AsyncLocalStorage<Request>();
 const loginAttempts = new Map<string, { count: number; expires: number }>();
 let verifying = 0;
 
@@ -29,7 +29,12 @@ export function getRequestUser(request: Request) {
 }
 
 export function getCurrentUser() {
-  return currentUser.getStore();
+  const request = getCurrentRequest();
+  return request && getRequestUser(request);
+}
+
+export function getCurrentRequest() {
+  return currentRequest.getStore();
 }
 
 export function requireRequestUser(request: Request) {
@@ -40,7 +45,7 @@ export function requireRequestUser(request: Request) {
 
 export function runAsRequestUser(request: Request, user: AuthUser, next: () => void) {
   requestUsers.set(request, user);
-  currentUser.run(user, next);
+  currentRequest.run(request, next);
 }
 
 export async function initializeAccounts(app: Express, dataDirectory: string) {
