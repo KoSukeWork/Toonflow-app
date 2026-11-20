@@ -1,6 +1,6 @@
 services:
   toonflow:
-    image: toonflow:lan-multi-user-arm64
+    image: toonflow:cusARM64
     platform: linux/arm64
     init: true
     restart: unless-stopped

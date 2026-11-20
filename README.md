@@ -413,7 +413,7 @@ bun run start:server
 
 局域网的 [docker-compose.yml](./docker-compose.yml) 默认启用多用户模式，使用宿主机的 `6060` 端口。容器的 `/app/data` 映射到此文件同目录的 `./data`，工程文件在宿主机的 `./data/workspaces/`。若使用 NAS 或单独的数据盘，可将挂载项左侧的 `./data` 换成宿主机绝对路径，并在下面的命令中使用同一路径。
 
-先用 `docker load -i <镜像文件.tar>` 加载标签为 `toonflow:lan-multi-user-arm64` 的镜像，或在源码目录执行 `docker buildx build --platform linux/arm64 --load -t toonflow:lan-multi-user-arm64 .`。
+先用 `docker load -i toonflow-cusARM64.tar` 加载标签为 `toonflow:cusARM64` 的镜像，或在源码目录执行 `docker buildx build --platform linux/arm64 --load -t toonflow:cusARM64 .`。
 
 **从旧命名卷升级。** 在原部署目录执行以下命令。命令从旧容器找到实际挂载的卷，将整个数据目录复制到新建的 `./data`，旧卷保留作回退。如果目标目录已经存在，请先选择一个新的空目录，避免混合两份数据。
 
@@ -425,7 +425,7 @@ bun run start:server
   mkdir ./data
   docker compose -f docker-compose.yml stop toonflow
   docker run --rm --pull=never --user 0:0 --volumes-from "$cid:ro" \
-    --mount "type=bind,src=$(pwd)/data,dst=/dest" toonflow:lan-multi-user-arm64 \
+    --mount "type=bind,src=$(pwd)/data,dst=/dest" toonflow:cusARM64 \
     sh -ec 'cp -a /app/data/. /dest/ && chown 1000:1000 /dest'
 )
 ```
