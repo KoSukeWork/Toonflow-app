@@ -5,7 +5,7 @@ import conf from "@/utils/conf";
 import { getMobileLinkConfig, isMobileLinkRequest } from "@/utils/mobileLink";
 import { getRuntimePlatform } from "@/lib/platform";
 import { getRequestUser } from "@/utils/auth";
-import { resolveOwnedProjectDirectory } from "@/utils/projects";
+import { resolveProjectDirectory } from "@/utils/projects";
 
 export function isLocalWorkspaceRequest(req: Request) {
   if (req.app.locals.accounts) return getRequestUser(req)?.role === "admin";
@@ -19,7 +19,7 @@ export function isLocalWorkspaceRequest(req: Request) {
 }
 
 export async function resolveWorkspace(req: Request, path: string) {
-  if (req.app.locals.accounts) return resolveOwnedProjectDirectory(req, path);
+  if (req.app.locals.accounts) return resolveProjectDirectory(req, path);
   if (!isAbsolute(path)) throw Object.assign(new Error("工作目录必须是绝对路径"), { status: 400 });
   const directory = await realpath(path).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT" || err.code === "ENOTDIR") throw Object.assign(new Error("工作目录不存在，请重新选择文件夹"), { status: 404 });

@@ -6,6 +6,7 @@ import type { RegisteredProject } from "@toonflow/server/auth";
 
 export type Project = {
   id?: string;
+  accessRole?: RegisteredProject["accessRole"];
   directory: string;
   name: string;
   lastOpenedAt: number;

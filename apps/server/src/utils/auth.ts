@@ -64,6 +64,16 @@ export async function initializeAccounts(app: Express, dataDirectory: string) {
         ownerId TEXT NOT NULL REFERENCES users(id), lastOpenedAt INTEGER NOT NULL DEFAULT 0
       );
       CREATE INDEX IF NOT EXISTS projectsByOwner ON projects(ownerId, lastOpenedAt);
+      CREATE TABLE IF NOT EXISTS projectMembers (
+        projectId TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        lastOpenedAt INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (projectId, userId)
+      );
+      CREATE INDEX IF NOT EXISTS projectsByMember ON projectMembers(userId, lastOpenedAt);
+      CREATE TRIGGER IF NOT EXISTS addProjectOwner AFTER INSERT ON projects BEGIN
+        INSERT INTO projectMembers(projectId, userId) VALUES (NEW.id, NEW.ownerId);
+      END;
+      INSERT OR IGNORE INTO projectMembers SELECT id, ownerId, lastOpenedAt FROM projects;
     `);
     if (!db.query("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").get()) {
       const username = usernameSchema.safeParse(process.env.TOONFLOW_ADMIN_USERNAME || "admin");

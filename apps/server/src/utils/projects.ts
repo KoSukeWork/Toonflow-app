@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { lstat, mkdir, realpath, rmdir, unlink, writeAtomic } from "@toonflow/file";
-import type { Express, Request } from "express";
+import type { Express, Request, Response } from "express";
 import { z } from "zod";
 import { getAccountDatabase, requireRequestUser } from "@/utils/auth";
 import { isWithin, lockWorkspaceFiles } from "@/utils/workspace/files";
@@ -37,21 +37,40 @@ async function verifyDirectory(root: string, directory: string) {
   return absolutePath;
 }
 
-export async function resolveOwnedProjectDirectory(request: Request, path: string) {
+const memberRequests = new Map<string, Set<Response>>();
+const projectSelection = `SELECT p.id, p.directory, p.name, m.lastOpenedAt,
+  CASE WHEN p.ownerId = m.userId THEN 'owner' ELSE 'editor' END AS accessRole
+  FROM projects p JOIN projectMembers m ON m.projectId = p.id WHERE m.userId = ?`;
+
+export async function resolveProjectDirectory(request: Request, path: string) {
   const user = requireRequestUser(request);
   if (!isAbsolute(path)) throw Object.assign(new Error("工作目录必须是绝对路径"), { status: 400 });
   const root = projectRoot(request);
-  const directory = getAccountDatabase(request).query<{ directory: string }, [string, string]>(
-    "SELECT directory FROM projects WHERE ownerId = ? AND directoryKey = ?",
-  ).get(user.id, directoryKey(relative(root, path)))?.directory;
-  if (!directory) throw projectUnavailable();
-  return verifyDirectory(root, directory);
+  const project = getAccountDatabase(request).query<RegisteredProject, [string, string]>(projectSelection + " AND p.directoryKey = ?")
+    .get(user.id, directoryKey(relative(root, path)));
+  if (!project) throw projectUnavailable();
+  const response = request.res;
+  if (project.accessRole === "editor" && response) {
+    const key = project.id + ":" + user.id;
+    const active = memberRequests.get(key) ?? new Set<Response>();
+    if (!active.has(response)) {
+      active.add(response);
+      memberRequests.set(key, active);
+      response.once("close", () => {
+        active.delete(response);
+        if (!active.size && memberRequests.get(key) === active) memberRequests.delete(key);
+      });
+    }
+  }
+  const directory = await verifyDirectory(root, project.directory);
+  if (response?.destroyed) throw projectUnavailable();
+  return directory;
 }
 
 export function listProjects(request: Request): RegisteredProject[] {
   const user = requireRequestUser(request);
   return getAccountDatabase(request).query<RegisteredProject, [string]>(
-    "SELECT id, directory, name, lastOpenedAt FROM projects WHERE ownerId = ? ORDER BY lastOpenedAt DESC, name",
+    projectSelection + " ORDER BY m.lastOpenedAt DESC, p.name",
   ).all(user.id).map(project => ({ ...project, directory: resolve(projectRoot(request), project.directory) }));
 }
 
@@ -77,7 +96,7 @@ export async function createProject(request: Request, name: string): Promise<Reg
     if (createdDirectory) await rmdir(directory).catch(console.error);
     throw error;
   } finally { release(); }
-  return { id, directory, name, lastOpenedAt: 0 };
+  return { id, directory, name, lastOpenedAt: 0, accessRole: "owner" };
 }
 
 export async function registerProject(request: Request, path: string, ownerId: string, name?: string): Promise<RegisteredProject> {
@@ -107,20 +126,45 @@ export async function registerProject(request: Request, path: string, ownerId: s
       db.query("INSERT INTO projects (id, directory, directoryKey, name, ownerId) VALUES (?, ?, ?, ?, ?)").run(id, directory, directoryKey(directory), projectName, ownerId);
     })();
   } finally { release(); }
-  return { id, directory: absolutePath, name: projectName, lastOpenedAt: 0 };
+  return { id, directory: absolutePath, name: projectName, lastOpenedAt: 0, accessRole: "owner" };
 }
 
 export async function openProject(request: Request, id: string): Promise<RegisteredProject> {
   const user = requireRequestUser(request);
   const db = getAccountDatabase(request);
-  const found = db.query<{ directory: string }, [string, string]>("SELECT directory FROM projects WHERE id = ? AND ownerId = ?").get(id, user.id);
+  const found = db.query<RegisteredProject, [string, string]>(projectSelection + " AND p.id = ?").get(user.id, id);
   if (!found) throw projectUnavailable();
   const directory = await verifyDirectory(projectRoot(request), found.directory);
-  const project = db.query<RegisteredProject, [number, string, string]>(
-    "UPDATE projects SET lastOpenedAt = ? WHERE id = ? AND ownerId = ? RETURNING id, directory, name, lastOpenedAt",
-  ).get(Date.now(), id, user.id);
-  if (!project) throw projectUnavailable();
-  return { ...project, directory };
+  const lastOpenedAt = Date.now();
+  if (!db.query("UPDATE projectMembers SET lastOpenedAt = ? WHERE projectId = ? AND userId = ?").run(lastOpenedAt, id, user.id).changes) throw projectUnavailable();
+  return { ...found, lastOpenedAt, directory };
+}
+
+function ownedProjectDatabase(request: Request, id: string) {
+  const db = getAccountDatabase(request);
+  if (!db.query("SELECT 1 FROM projects WHERE id = ? AND ownerId = ?").get(id, requireRequestUser(request).id)) throw projectUnavailable();
+  return db;
+}
+
+export function listProjectMembers(request: Request, id: string) {
+  return ownedProjectDatabase(request, id).query<{ id: string; username: string }, [string, string]>(
+    "SELECT u.id, u.username FROM projectMembers m JOIN users u ON u.id = m.userId WHERE m.projectId = ? AND u.id <> ? ORDER BY u.username",
+  ).all(id, requireRequestUser(request).id);
+}
+
+export function shareProject(request: Request, id: string, username: string) {
+  const db = ownedProjectDatabase(request, id);
+  const member = db.query<{ id: string }, [string]>("SELECT id FROM users WHERE username = ?").get(username);
+  if (!member) throw Object.assign(new Error("找不到该账号"), { status: 404 });
+  if (member.id === requireRequestUser(request).id) throw Object.assign(new Error("你已经是项目所有者"), { status: 400 });
+  db.query("INSERT OR IGNORE INTO projectMembers(projectId,userId) VALUES (?,?)").run(id, member.id);
+}
+
+export function unshareProject(request: Request, id: string, userId: string) {
+  const db = ownedProjectDatabase(request, id);
+  if (requireRequestUser(request).id === userId) throw Object.assign(new Error("无法移除项目所有者"), { status: 400 });
+  db.query("DELETE FROM projectMembers WHERE projectId = ? AND userId = ?").run(id, userId);
+  for (const response of memberRequests.get(id + ":" + userId) ?? []) response.destroy();
 }
 
 export function renameProject(request: Request, id: string, name: string) {

@@ -82,7 +82,9 @@
               </span>
             </button>
             <div class="projectActions">
-              <el-button text :icon="IconEdit" :disabled="creating || opening" :aria-label="`重命名项目 ${project.name}`" title="重命名" @click="renameProject(project)" />
+              <el-button v-if="project.accessRole === 'owner'" text :icon="IconUsers" :aria-label="`管理 ${project.name} 的共享成员`" title="共享成员" @click="sharedProject = project" />
+              <el-tag v-if="project.accessRole === 'editor'" size="small">共享项目</el-tag>
+              <el-button v-else text :icon="IconEdit" :disabled="creating || opening" :aria-label="`重命名项目 ${project.name}`" title="重命名" @click="renameProject(project)" />
               <el-button v-if="!authState.enabled" text type="danger" :icon="IconFolderMinus" :disabled="creating || opening" :aria-label="`移除项目 ${project.name}`" title="从列表移除，不删除文件" @click="workspaceStore.removeProject(project.directory)" />
             </div>
           </el-card>
@@ -93,6 +95,7 @@
     <mobileConnect v-if="!authState.enabled" v-model="mobileConnectVisible" />
     <workspacePicker v-if="!authState.enabled" ref="relocationPicker" hideTrigger />
     <accountManagement v-if="authState.user?.role === 'admin'" v-model="accountsVisible" @registered="loadRegisteredProjects" />
+    <projectSharing v-if="sharedProject?.id" :projectId="sharedProject.id" :name="sharedProject.name" @close="sharedProject = undefined" />
   </el-container>
 </template>
 
@@ -109,7 +112,7 @@ import {
   IconArrowUp, IconLayoutGrid,
   IconList, IconSortDescending,
   IconSortAscending, IconFolder, IconEdit,
-  IconFolderMinus, IconFolderPlus, IconFolderOpen, IconPaperclip,
+  IconFolderMinus, IconFolderPlus, IconFolderOpen, IconPaperclip, IconUsers,
 } from "@tabler/icons-vue";
 import modelPopover from "@/components/modelPopover.vue";
 import attachmentList from "@/components/agent/attachmentList.vue";
@@ -124,10 +127,12 @@ import settings from "@/components/settings/index.vue";
 import bg from "./bg.vue";
 import workspacePicker from "./workspacePicker.vue";
 import accountManagement from "./accountManagement.vue";
+import projectSharing from "./projectSharing.vue";
 import { authState, switchAccount } from "@/lib/auth";
 import type { RegisteredProject } from "@toonflow/server/auth";
 
 const settingsVisible = ref(false);
+const sharedProject = ref<Project>();
 const mobileConnectVisible = ref(false);
 const mobileConnect = defineAsyncComponent(() => import("@/components/mobileConnect.vue"));
 const router = useRouter();
