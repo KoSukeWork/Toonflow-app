@@ -2,7 +2,7 @@ import logger from "morgan";
 import express from "express";
 import cors from "cors";
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { readFile } from "@toonflow/file";
 import type { Request, Response, NextFunction } from "express";
 import buildRoute from "@/core";
@@ -12,6 +12,8 @@ import { getRuntimePlatform } from "@/lib/platform";
 import initializePlugins from "@/utils/plugins/initialize";
 import { languageRequest, resolveRequestLocale, runWithLocale, setLocaleFallback, translateError, translateMessage } from "@/lib/i18n";
 import { detectLocale, normalizeLocale } from "@toonflow/i18n";
+import { initializeAccounts, isMultiUserEnabled } from "@/utils/auth";
+import { multiUserAccess } from "@/lib/multiUserAccess";
 
 const autoInstallProviders = ["tfRouter.ts", "apiMart.ts", "metaso.ts", "compshare.ts"];
 
@@ -72,17 +74,31 @@ export async function createApp({
   if (dataDirectory && agentsRoot) await initializePlugins(resolve(dataDirectory, "agents"), agentsRoot);
   const app = express();
   app.locals.appVersion = appVersion;
+  const multiUser = isMultiUserEnabled();
+  if (multiUser) {
+    const root = dirname(conf.path);
+    await initializeAccounts(app, root);
+    const { initializeProjects } = await import("@/utils/projects");
+    await initializeProjects(app, root);
+  }
 
   if (getRuntimePlatform().development) {
     await buildRoute();
     app.use(logger("dev"));
   }
-  app.use(cors());
+  if (!multiUser) app.use(cors());
   app.use(languageRequest);
+  if (multiUser) {
+    app.use(multiUserAccess);
+    app.use("/api/auth", express.json({ limit: "8kb" }));
+  }
   app.use("/a2a", express.json({ limit: "2mb" }));
   app.use(["/api/workspaces/files/write", "/api/assets/save"], express.raw({ type: "application/octet-stream", limit: "100mb" }));
-  app.use(express.json({ limit: "100mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+  if (multiUser) app.use("/api", express.json({ limit: "100mb" }));
+  else {
+    app.use(express.json({ limit: "100mb" }));
+    app.use(express.urlencoded({ extended: true, limit: "100mb" }));
+  }
   app.use("/api/desktop", desktopRequest);
 
   const { default: initializeProviderModels } = await import("@/utils/ai/initialize");
@@ -112,7 +128,9 @@ export async function createApp({
     response.status(body.code).json(body);
   });
 
-  const { initializeMobileLinkRuntime } = await import("@/utils/mobileLink");
-  initializeMobileLinkRuntime(app);
+  if (!multiUser) {
+    const { initializeMobileLinkRuntime } = await import("@/utils/mobileLink");
+    initializeMobileLinkRuntime(app);
+  }
   return app;
 }

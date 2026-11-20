@@ -12,13 +12,15 @@ import router from "@/router";
 import { registerDesktopProtocol } from "@/lib/desktopProtocol";
 import { registerDownloads } from "@/lib/saveFile";
 import { isMobile, isDesktop, isRemoteConnection } from "@/lib/platform";
-import "@/lib/mobile";
+import { registerMobileConnection } from "@/lib/mobile";
 import { getMissingBrowserFeatures } from "@/lib/browserCapabilities";
 import { registerAnonymousData } from "@/lib/anonymousData";
 import { loadSettings, settingsStorage } from "@/stores/settings";
 import { checkDesktopUpdate } from "@/stores/desktopUpdate";
 import { registerLanguage } from "@/lib/i18n";
 import { locale, translate } from "@toonflow/i18n/vue";
+import { authState, loadAuthState, registerApiIdentity } from "@/lib/auth";
+import axios from "axios";
 
 const browserCrypto = globalThis.crypto;
 if (browserCrypto && typeof browserCrypto.randomUUID !== "function" && typeof browserCrypto.getRandomValues === "function") {
@@ -35,6 +37,7 @@ if (browserCrypto && typeof browserCrypto.randomUUID !== "function" && typeof br
 
 const app = createApp(App);
 app.onUnmount(registerLanguage());
+app.onUnmount(registerApiIdentity(axios));
 const requiresWebView2Update = isDesktop && /Windows/i.test(navigator.userAgent)
   && [Map.groupBy, URL.canParse, Promise.withResolvers].some(method => typeof method !== "function");
 const requiresMobileWebViewUpdate = isMobile && getMissingBrowserFeatures().length > 0;
@@ -55,11 +58,14 @@ async function notifyDesktopReady(failed = false) {
   ? Promise.reject(new Error("当前 Microsoft Edge WebView2 Runtime 版本过旧。请以管理员身份运行微软最新版安装器；若仍提示已安装，请修复 WebView2 或联系管理员检查更新服务。更新完成后，请完全退出 Toonflow 再重新打开。"))
   : requiresMobileWebViewUpdate
   ? Promise.reject(new Error("当前移动端浏览器内核缺少 Toonflow 所需能力。请更新 Toonflow 和系统浏览器内核；部分系统需要通过系统更新升级。更新完成后，请完全退出并重新打开 Toonflow。"))
-  : loadSettings()).then(async () => {
+  : loadAuthState().then(async () => {
+    registerMobileConnection();
+    if (!authState.value.enabled || authState.value.user) await loadSettings();
+  })).then(async () => {
   app.use(createPinia().use(createPersistedState({ storage: settingsStorage })));
   app.use(router);
   await router.isReady();
-  app.onUnmount(registerAnonymousData());
+  if (!authState.value.enabled || authState.value.user) app.onUnmount(registerAnonymousData());
   app.mount("#app");
   isMounted = true;
   app.onUnmount(registerDownloads());

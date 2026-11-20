@@ -6,7 +6,7 @@
           <component :is="currentComponent" />
         </transition>
       </router-view>
-      <ffmpegRequired />
+      <ffmpegRequired v-if="!authState.enabled" />
       <updateBox
         v-if="updateBoxBuild && !installFailure"
         v-model="updateBoxVisible"
@@ -57,11 +57,12 @@ import { isMobile, isDesktop } from "@/lib/platform";
 import { saveSettings, settings, uiSettings } from "@/stores/settings";
 import { desktopUpdateSnapshot, stopDesktopUpdateObservation } from "@/stores/desktopUpdate";
 import { useMcpControl } from "@/lib/mcpControl";
+import { authState } from "@/lib/auth";
 import ffmpegRequired from "@/components/settings/ffmpegRequired.vue";
 import updateBox from "@/components/updateBox.vue";
 import "element-plus/theme-chalk/dark/css-vars.css";
 
-useMcpControl();
+if (!authState.value.enabled) useMcpControl();
 
 // ACT: TDesign 缺少的语言使用英语基底，聊天控件由应用字典补齐。
 const tdesignLocales = {

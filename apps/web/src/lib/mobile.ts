@@ -2,6 +2,7 @@ import { computed, ref } from "vue";
 import axios from "axios";
 import { t, translate } from "@toonflow/i18n/vue";
 import { isMobile, isDesktop, isRemoteConnection } from "./platform";
+import { authState } from "@/lib/auth";
 
 type MobileConnection = { mode: "local" | "remote"; name?: string; url?: string; online?: boolean | null; appVersion?: string; remoteAppVersion?: string };
 
@@ -74,10 +75,13 @@ export async function changeDeviceConnection(action: "connect" | "disconnect", b
   if (data.restart === "mobile") window.location.href = "toonflow://restart";
 }
 
-document.addEventListener("visibilitychange", () => {
-  clearTimeout(connectionTimer);
-  if (!document.hidden) void refreshMobileConnection().catch(() => {});
-});
-window.addEventListener("pagehide", () => clearTimeout(connectionTimer));
-window.addEventListener("pageshow", () => { void refreshMobileConnection().catch(() => {}); });
-void refreshMobileConnection().catch(() => {});
+export function registerMobileConnection() {
+  if (authState.value.enabled) return;
+  document.addEventListener("visibilitychange", () => {
+    clearTimeout(connectionTimer);
+    if (!document.hidden) void refreshMobileConnection().catch(() => {});
+  });
+  window.addEventListener("pagehide", () => clearTimeout(connectionTimer));
+  window.addEventListener("pageshow", () => { void refreshMobileConnection().catch(() => {}); });
+  void refreshMobileConnection().catch(() => {});
+}

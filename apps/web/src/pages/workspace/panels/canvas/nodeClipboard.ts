@@ -1,11 +1,13 @@
 import type { Edge, GraphEdge, GraphNode, Node } from "@vue-flow/core";
 import { isNodeOutput } from "@toonflow/nodes-scaffold/values";
 import { writeClipboardText } from "@/lib/clipboard";
+import { authState } from "@/lib/auth";
 
 export const nodeClipboardCommand = /^toonflow:paste-node:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 type ClipboardNode = { type: string; data: Record<string, unknown> };
 type ClipboardEntry = { command: string; directory: string; node?: ClipboardNode; nodes?: Node[]; edges?: Edge[] };
+let currentPageClipboard: ClipboardEntry | undefined;
 
 async function openClipboardDatabase() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -17,6 +19,11 @@ async function openClipboardDatabase() {
 }
 
 async function accessClipboard(entry?: ClipboardEntry) {
+  // ACT: 局域网账号可以共用一个浏览器，画布剪贴内容只在当前页面保留。
+  if (authState.value.enabled) {
+    if (entry) currentPageClipboard = entry;
+    return currentPageClipboard;
+  }
   const database = await openClipboardDatabase();
   try {
     return await new Promise<ClipboardEntry | undefined>((resolve, reject) => {

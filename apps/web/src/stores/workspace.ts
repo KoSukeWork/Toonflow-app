@@ -2,8 +2,10 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import axios from "axios";
 import type { AgentAttachment } from "@/components/agent/types";
+import type { RegisteredProject } from "@toonflow/server/auth";
 
 export type Project = {
+  id?: string;
   directory: string;
   name: string;
   lastOpenedAt: number;
@@ -31,10 +33,12 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     ];
   }
 
-  function renameProject(path: string, name: string) {
+  async function renameProject(path: string, name: string) {
     const target = projectList.value.find(item => item.directory === path);
-    if (!target || !name.trim()) return;
-    target.name = name.trim();
+    name = name.trim();
+    if (!target || !name || target.name === name) return;
+    if (target.id) await axios.put("/api/projects/rename", { id: target.id, name });
+    target.name = name;
     if (project.value?.directory === path) project.value = target;
   }
 
@@ -43,7 +47,18 @@ export const useWorkspaceStore = defineStore("workspace", () => {
     if (project.value?.directory === path) project.value = null;
   }
 
-  return { project, projectList, pendingAgentMessage, openProject, renameProject, removeProject };
+  async function loadProjects() {
+    const { data } = await axios.get<{ data: RegisteredProject[] }>("/api/projects/list");
+    projectList.value = data.data;
+  }
+
+  function activateRegisteredProject(value: RegisteredProject) {
+    pendingAgentMessage.value = null;
+    project.value = value;
+    projectList.value = [value, ...projectList.value.filter(item => item.id !== value.id)];
+  }
+
+  return { project, projectList, pendingAgentMessage, openProject, renameProject, removeProject, loadProjects, activateRegisteredProject };
 }, {
   persist: {
     key: "toonflow.projectList",

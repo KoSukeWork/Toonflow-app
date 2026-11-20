@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, readFile, realpath } from "@toonflow/file";
 import { dirname, join } from "node:path";
 import conf from "@/utils/conf";
+import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
 import { lockWorkspaceFiles, resolveWorkspacePath, writeWorkspaceFile } from "@/utils/workspace/files";
 
 export type PersonalizationDocument = "memory" | "agents";
@@ -12,7 +13,9 @@ const labels = { memory: "全局记忆", agents: "全局 AGENTS.md" };
 export const maxDocumentLength = 20000;
 
 export function isMemoryEnabled() {
-  const value = conf.get("settings", {}).personalization;
+  const user = getCurrentUser();
+  if (isMultiUserEnabled() && !user) return false;
+  const value = (user ? conf.get("userPreferences", {})[user.id] : conf.get("settings", {}))?.personalization;
   return !value || typeof value !== "object" || Array.isArray(value) || (value as Record<string, unknown>).memoryEnabled !== false;
 }
 
@@ -22,14 +25,17 @@ function result(content: string) {
 
 async function documentPath(document: PersonalizationDocument) {
   if (!Object.hasOwn(documents, document)) throw Object.assign(new Error("个性化文档类型无效"), { status: 400 });
-  const directory = dirname(conf.path);
-  await mkdir(directory, { recursive: true });
-  const directories = [directory, ...(document === "memory" ? [join(directory, "memories")] : [])];
+  const root = dirname(conf.path);
+  const user = getCurrentUser();
+  if (isMultiUserEnabled() && !user) throw Object.assign(new Error("请先登录"), { status: 401 });
+  const directory = user ? join(root, "users", user.id) : root;
+  const directories = [root, ...(user ? [join(root, "users"), directory] : []), ...(document === "memory" ? [join(directory, "memories")] : [])];
   for (const path of directories) {
     const info = await lstat(path).catch((err: NodeJS.ErrnoException) => { if (err.code === "ENOENT") return null; throw err; });
     if (info?.isSymbolicLink()) throw Object.assign(new Error("不能通过符号链接访问个性化文档"), { status: 403 });
     if (info && !info.isDirectory()) throw Object.assign(new Error("个性化文档所在路径不是目录"), { status: 400 });
   }
+  await mkdir(directory, { recursive: true });
   return (await resolveWorkspacePath(await realpath(directory), documents[document], true)).path;
 }
 

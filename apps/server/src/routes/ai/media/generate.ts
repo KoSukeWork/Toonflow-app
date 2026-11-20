@@ -5,6 +5,7 @@ import { validateFields } from "@/lib/middleware";
 import { success, error, errorFromCause } from "@/lib/responseFormat";
 import u from "@/utils";
 import { translateMessage, validationOptions } from "@/lib/i18n";
+import { getRequestUser } from "@/utils/auth";
 
 export default Router().post("/", validateFields({
   directory: z.string().min(1).max(4096), mediaType: z.enum(["image", "video", "audio"]),
@@ -16,6 +17,7 @@ export default Router().post("/", validateFields({
     return;
   }
   const cwd = await u.workspace.resolveWorkspace(req, directory);
+  const multiUser = Boolean(getRequestUser(req));
   const controller = new AbortController();
   let heartbeat: ReturnType<typeof setInterval> | undefined;
   const close = () => { clearInterval(heartbeat); controller.abort(); };
@@ -23,14 +25,14 @@ export default Router().post("/", validateFields({
   req.once("aborted", close);
   req.socket.once("close", close);
   try {
-    res.set({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" });
+    res.set({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": multiUser ? "no-store, no-transform" : "no-cache, no-transform", "X-Accel-Buffering": "no" });
     res.flushHeaders();
     // ACT: JSON 允许前导空白，保活时保留现有 response.json() 契约。
     heartbeat = setInterval(() => { if (!res.destroyed && !res.writableEnded && !res.writableNeedDrain) res.write("\n"); }, 20000);
     const files = await u.mediaGeneration.generateMedia(cwd, mediaType, parsed.data, controller.signal);
     if (!res.destroyed) res.write(JSON.stringify(success(files)));
   } catch (err) {
-    if (!res.destroyed) res.write(JSON.stringify(errorFromCause(err)));
+    if (!res.destroyed) res.write(JSON.stringify(multiUser ? error("媒体生成失败", null, 502) : errorFromCause(err)));
   } finally {
     clearInterval(heartbeat);
     res.off("close", close);

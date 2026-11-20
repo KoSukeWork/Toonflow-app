@@ -404,10 +404,33 @@ bun run start:server
 
 ### 4.4 访问与数据说明
 
-- 当前服务使用固定端口 `3000`，业务页面与 API 没有独立登录鉴权。服务器安装时，请通过防火墙或安全组限制 `3000` 端口的访问来源；公网访问需配置带认证的反向代理。
+- 桌面端和独立服务默认使用单机模式。服务器的单机模式没有账号鉴权，请通过防火墙或安全组限制访问来源。`compose.yaml` 默认只绑定本机的 `3000` 端口。
 - 个人远程使用可在自己的电脑上执行 `ssh -N -L 3000:127.0.0.1:3000 用户名@服务器地址`，保持连接后打开 `http://127.0.0.1:3000`，无需将服务器的 `3000` 端口向公网开放。
 - 直接安装时，配置、插件与工作区默认保存在仓库的 `data/`；Docker 安装则保存在数据卷内的 `/app/data/`。迁移或备份时请完整保留。进入页面后选择服务器工作区内的 `myProject`，更多项目可在对应的 `workspaces/` 下创建子目录。
 - 两种安装方式均包含系统 FFmpeg。模型服务的 API Key 仍需在页面内配置。
+
+#### 局域网多用户
+
+局域网的 [docker-compose.yml](./docker-compose.yml) 默认启用多用户模式，使用宿主机的 `6060` 端口。首次启动前，在部署目录的 `.env` 设置 `TOONFLOW_ADMIN_PASSWORD`，使用 12 至 128 字符的独立密码。可选用 `TOONFLOW_ADMIN_USERNAME` 配置初始管理员账号，默认值为 `admin`。在包含多用户改造的源码目录构建并启动新版镜像：
+
+```sh
+docker buildx build --platform linux/arm64 --load -t toonflow:lan-multi-user-arm64 .
+docker compose -f docker-compose.yml up -d --pull never
+```
+
+也可以先加载同标签的新版镜像，再执行启动命令。在原 Compose 项目目录启动会继续使用 `toonflowData` 数据卷。独立服务可在启动时设置 `TOONFLOW_MULTI_USER=1` 及相同的管理员环境变量。管理员仅在第一次初始化账号数据库时创建，初始化成功后可以从部署环境移除初始密码。通过 HTTPS 反向代理部署时设置 `TOONFLOW_SECURE_COOKIES=1`，并保留请求的 `Host`。使用 HTTP 时请限定可信局域网访问。
+
+管理员登录后，在首页的「账号和项目管理」创建成员，并将初始凭据交给对应成员。成员创建的项目默认归自己所有，浏览器刷新会按项目地址恢复。迁移时备份整个数据目录，保留其中的 `accounts.sqlite`、设置和 `workspaces/`。旧项目放在 `workspaces/` 下，由管理员输入其相对目录并指定所有者，已有文件无需转换。例如可登记 `myProject`，已登记目录的上下级目录不可再次登记。
+
+升级已有 Docker 卷时，`data/nodes/initialized` 会让服务保留旧版节点脚本。旧版生成节点缺少多用户请求头，需要逐个更新对应的 UMD 文件。例如从新版容器取出文本节点：
+
+```sh
+docker compose -f docker-compose.yml cp toonflow:/app/build/nodes/textNode.umd.js ./textNode.umd.js
+```
+
+管理员在「设置 → 插件市场 → 安装插件」选择此文件，遇到同版本提示时确认覆盖。该操作只替换同名脚本，节点配置及其他自定义节点继续保留。独立部署可从 `build/nodes/` 直接选取对应文件。
+
+第一阶段支持项目内文件、画布、模型名单和项目内生成。共享成员、实时协作、Agent、MCP、设备互联、全局素材库和进程级任务控制留待后续阶段。
 
 ---
 

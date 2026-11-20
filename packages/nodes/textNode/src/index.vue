@@ -233,7 +233,7 @@ async function generateText() {
       .filter(item => item.value !== undefined && (item.dataType === "STRING" || item.dataType === "IMAGE" || item.dataType === "VIDEO" || item.dataType === "FILE"))
       .map(item => item.dataType === "STRING" ? { dataType: item.dataType, value: item.value } : { dataType: item.dataType, value: { ...item.value } });
     const input = { providerId: choice.providerId, modelId: choice.modelId, prompt: prompt.value.trim(), references };
-    const directory = references.some(item => item.dataType !== "STRING") ? (await textFiles.list()).directory : undefined;
+    const { directory } = await textFiles.list();
     const result = await ai.generate({
       ...input,
       directory,

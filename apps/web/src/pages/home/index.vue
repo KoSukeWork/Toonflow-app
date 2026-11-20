@@ -6,7 +6,9 @@
         <el-badge isDot :hidden="!hasDesktopUpdate">
           <el-button round size="large" :icon="IconSettings" :aria-label="hasDesktopUpdate ? '设置，有新版本可用' : '设置'" @click="settingsVisible = true">设置</el-button>
         </el-badge>
-        <el-button round size="large" :type="deviceHubEnabled ? 'success' : undefined" :plain="deviceHubEnabled" :icon="deviceHubEnabled || mobileConnection.mode === 'remote' ? IconDeviceDesktop : IconQrcode" @click="mobileConnectVisible = true">{{ mobileConnectionLabel }}</el-button>
+        <el-button v-if="!authState.enabled" round size="large" :type="deviceHubEnabled ? 'success' : undefined" :plain="deviceHubEnabled" :icon="deviceHubEnabled || mobileConnection.mode === 'remote' ? IconDeviceDesktop : IconQrcode" @click="mobileConnectVisible = true">{{ mobileConnectionLabel }}</el-button>
+        <el-button v-if="authState.user?.role === 'admin'" round size="large" @click="accountsVisible = true">账号和项目管理</el-button>
+        <el-button v-if="authState.user" round size="large" :loading="switchingAccount" :disabled="creating || opening" @click="changeAccount">{{ authState.user.username }} · 切换账号</el-button>
       </div>
       <div class="githubAction">
         <span class="arrowHint starHint">
@@ -24,7 +26,7 @@
           <el-image class="brandLogo" :src="logoUrl" fit="contain" alt="Toonflow" />
           <h1>Toonflow</h1>
         </div>
-        <div class="promptArea">
+        <div v-if="!authState.enabled" class="promptArea">
           <span class="arrowHint inspirationHint">
             灵感创作模式
             <svg viewBox="0 0 60 60" fill="none" aria-hidden="true">
@@ -60,8 +62,8 @@
         <div class="sectionHeader">
           <h2 id="projectListTitle">项目列表</h2>
           <el-space wrap>
-            <el-button :icon="IconFolderOpen" :disabled="creating || opening" @click="openProject()">导入项目</el-button>
-            <el-button :icon="IconFolderPlus" :disabled="creating || opening" @click="createProject(false)">添加项目</el-button>
+            <el-button v-if="!authState.enabled" :icon="IconFolderOpen" :disabled="creating || opening" @click="openProject()">导入项目</el-button>
+            <el-button :icon="IconFolderPlus" :loading="creating" :disabled="opening" @click="createProject(false)">{{ authState.enabled ? "新建项目" : "添加项目" }}</el-button>
             <el-button circle :icon="sortDescending ? IconSortDescending : IconSortAscending" :aria-label="sortDescending ? '按时间降序' : '按时间升序'" @click="sortDescending = !sortDescending" />
             <el-radio-group v-model="viewMode" aria-label="项目视图">
               <el-radio-button value="grid" aria-label="网格视图"><icon-layout-grid :size="16" /></el-radio-button>
@@ -69,27 +71,28 @@
             </el-radio-group>
           </el-space>
         </div>
-        <div class="projectItems" :class="{ listView: viewMode === 'list' }">
-          <el-card v-for="project in sortedProjects" :key="project.directory" class="projectCard" shadow="hover" :bodyStyle="{ padding: '0' }">
+        <div class="projectItems" :class="{ listView: viewMode === 'list' }" :aria-busy="loadingProjects">
+          <el-card v-for="project in sortedProjects" :key="project.id ?? project.directory" class="projectCard" shadow="hover" :bodyStyle="{ padding: '0' }">
             <button class="projectEntry" type="button" :disabled="creating || opening" :aria-label="`打开项目 ${project.name}`" @click="openProject(project)">
               <icon-folder class="projectIcon" :size="28" aria-hidden="true" />
               <span class="projectInfo">
                 <span class="projectName" :title="project.name">{{ project.name }}</span>
-                <span class="projectPath" :title="project.directory">{{ project.directory }}</span>
-                <span class="projectTime">最近打开 {{ new Date(project.lastOpenedAt).toLocaleString(locale, { hour12: false }) }}</span>
+                <span v-if="!authState.enabled" class="projectPath" :title="project.directory">{{ project.directory }}</span>
+                <span class="projectTime">{{ project.lastOpenedAt ? `最近打开 ${new Date(project.lastOpenedAt).toLocaleString(locale, { hour12: false })}` : "尚未打开" }}</span>
               </span>
             </button>
             <div class="projectActions">
               <el-button text :icon="IconEdit" :disabled="creating || opening" :aria-label="`重命名项目 ${project.name}`" title="重命名" @click="renameProject(project)" />
-              <el-button text type="danger" :icon="IconFolderMinus" :disabled="creating || opening" :aria-label="`移除项目 ${project.name}`" title="从列表移除，不删除文件" @click="workspaceStore.removeProject(project.directory)" />
+              <el-button v-if="!authState.enabled" text type="danger" :icon="IconFolderMinus" :disabled="creating || opening" :aria-label="`移除项目 ${project.name}`" title="从列表移除，不删除文件" @click="workspaceStore.removeProject(project.directory)" />
             </div>
           </el-card>
         </div>
       </section>
     </el-main>
     <settings v-model="settingsVisible" />
-    <mobileConnect v-model="mobileConnectVisible" />
-    <workspacePicker ref="relocationPicker" hideTrigger />
+    <mobileConnect v-if="!authState.enabled" v-model="mobileConnectVisible" />
+    <workspacePicker v-if="!authState.enabled" ref="relocationPicker" hideTrigger />
+    <accountManagement v-if="authState.user?.role === 'admin'" v-model="accountsVisible" @registered="loadRegisteredProjects" />
   </el-container>
 </template>
 
@@ -120,6 +123,9 @@ import useWorkspaceFiles from "@/lib/workspaceFiles";
 import settings from "@/components/settings/index.vue";
 import bg from "./bg.vue";
 import workspacePicker from "./workspacePicker.vue";
+import accountManagement from "./accountManagement.vue";
+import { authState, switchAccount } from "@/lib/auth";
+import type { RegisteredProject } from "@toonflow/server/auth";
 
 const settingsVisible = ref(false);
 const mobileConnectVisible = ref(false);
@@ -127,6 +133,9 @@ const mobileConnect = defineAsyncComponent(() => import("@/components/mobileConn
 const router = useRouter();
 const creating = ref(false);
 const opening = ref(false);
+const loadingProjects = ref(false);
+const accountsVisible = ref(false);
+const switchingAccount = ref(false);
 const promptWorkspacePicker = ref<InstanceType<typeof workspacePicker>>();
 const relocationPicker = ref<InstanceType<typeof workspacePicker>>();
 const prompt = ref("");
@@ -154,6 +163,10 @@ const placeholderPhrases = [
 const promptPlaceholder = ref(translate(placeholderPhrases[0]!));
 
 onMounted(() => {
+  if (authState.value.enabled) {
+    void loadRegisteredProjects();
+    return;
+  }
   window.addEventListener("dragend", clearAttachmentDrag, true);
   window.addEventListener("drop", clearAttachmentDrag, true);
   window.addEventListener("blur", clearAttachmentDrag);
@@ -209,6 +222,24 @@ const viewMode = ref("grid");
 const sortedProjects = computed(() => [...projectList.value].sort((left, right) =>
   sortDescending.value ? right.lastOpenedAt - left.lastOpenedAt : left.lastOpenedAt - right.lastOpenedAt
 ));
+
+async function loadRegisteredProjects() {
+  loadingProjects.value = true;
+  try { await workspaceStore.loadProjects(); }
+  catch (error) {
+    ElMessage.error(axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message || "读取项目列表失败" : "读取项目列表失败");
+  } finally { loadingProjects.value = false; }
+}
+
+async function changeAccount() {
+  if (switchingAccount.value) return;
+  switchingAccount.value = true;
+  try { await switchAccount(); }
+  catch {
+    switchingAccount.value = false;
+    ElMessage.error("退出登录失败，请重试");
+  }
+}
 
 function pasteAttachments(event: ClipboardEvent) {
   if (creating.value || opening.value) return;
@@ -320,6 +351,10 @@ async function openProject(project?: Project) {
   if (creating.value || opening.value) return;
   opening.value = true;
   try {
+    if (authState.value.enabled) {
+      if (project?.id) await router.push({ name: "workspace", params: { projectId: project.id } });
+      return;
+    }
     const directory = project?.directory ?? await relocationPicker.value?.chooseDirectory();
     if (!directory) return;
     try { await workspaceStore.openProject(directory); }
@@ -344,15 +379,30 @@ async function openProject(project?: Project) {
 async function renameProject(project: Project) {
   const result = await ElMessageBox.prompt("请输入项目名称", "重命名项目", {
     inputValue: project.name, confirmButtonText: "保存", cancelButtonText: "取消",
-    inputValidator: value => !!value?.trim() || "项目名称不能为空",
+    inputValidator: value => !!value?.trim() && (!project.id || value.trim().length <= 128) || (project.id ? "请输入 1 至 128 字符的项目名称" : "项目名称不能为空"),
   }).catch(() => null);
-  if (result) workspaceStore.renameProject(project.directory, result.value);
+  if (!result) return;
+  try { await workspaceStore.renameProject(project.directory, result.value); }
+  catch (error) {
+    ElMessage.error(axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message || "重命名项目失败" : "重命名项目失败");
+  }
 }
 
 async function createProject(fromPrompt = true) {
   if (creating.value || opening.value || (fromPrompt && !workspaceDirectory.value)) return;
   creating.value = true;
   try {
+    if (authState.value.enabled) {
+      const result = await ElMessageBox.prompt("请输入项目名称", "新建项目", {
+        confirmButtonText: "创建", cancelButtonText: "取消",
+        inputValidator: value => !!value?.trim() && value.trim().length <= 128 || "请输入 1 至 128 字符的项目名称",
+      }).catch(() => null);
+      if (!result) return;
+      const { data } = await axios.post<{ data: RegisteredProject }>("/api/projects/create", { name: result.value.trim() });
+      await loadRegisteredProjects();
+      await router.push({ name: "workspace", params: { projectId: data.data.id } });
+      return;
+    }
     let path = workspaceDirectory.value;
     if (!fromPrompt) {
       const confirmed = await ElMessageBox.confirm("请选择一个空文件夹作为项目目录，画布和素材将保存在其中。", "添加项目", {

@@ -36,7 +36,8 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, shallowRef } from "vue";
+import { computed, defineAsyncComponent, shallowRef } from "vue";
+import { authState } from "@/lib/auth";
 import { hasDesktopUpdate } from "@/stores/desktopUpdate";
 import { isMobile } from "@/lib/platform";
 import {
@@ -53,7 +54,7 @@ import {
   IconDevices,
 } from "@tabler/icons-vue";
 
-const settingsPanels = [
+const panels = [
   { id: "ui", label: "界面设置", icon: IconPalette, component: defineAsyncComponent(() => import("./panels/ui.vue")) },
   { id: "general", label: "常规配置", icon: IconSettings, component: defineAsyncComponent(() => import("./panels/general/index.vue")) },
   {
@@ -86,7 +87,13 @@ const settingsPanels = [
   { id: "developer", label: "开发者选项", icon: IconCode, component: defineAsyncComponent(() => import("./panels/developer/index.vue")) },
   { id: "about", label: "关于", icon: IconInfoCircle, component: defineAsyncComponent(() => import("./panels/about.vue")) },
 ];
-const activePanel = shallowRef(settingsPanels[0]!);
+const settingsPanels = computed(() => {
+  if (!authState.value.enabled) return panels;
+  const personalPanels = ["ui", "general", "personalization", "privacy", "about"];
+  const teamPanels = ["languageModel", "mediaModel", "pluginMarket"];
+  return panels.filter(panel => personalPanels.includes(panel.id) || (authState.value.user?.role === "admin" && teamPanels.includes(panel.id)));
+});
+const activePanel = shallowRef(panels[0]!);
 const visible = defineModel<boolean>({ default: false });
 </script>
 

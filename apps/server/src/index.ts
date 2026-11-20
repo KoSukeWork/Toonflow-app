@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { createApp } from "./app";
+import { isMultiUserEnabled } from "./utils/auth";
 import config from "../../../electrobun.config";
 
 const startTime = Date.now();
@@ -23,8 +24,10 @@ const app = await createApp({
 const { initializeMcpRuntime } = await import("./utils/mcp/runtime");
 const { startMobileLinkRuntime } = await import("./utils/mobileLink");
 app.listen(realPort, "0.0.0.0", async () => {
-  await initializeMcpRuntime(app, `http://127.0.0.1:${realPort}`, resolve(appDirectory, fromSource ? "packages/mcp/src/stdio.ts" : "build/mcp/stdio.js"));
-  await startMobileLinkRuntime(app).catch(error => console.error("设备互联启动失败：", error));
+  if (!isMultiUserEnabled()) {
+    await initializeMcpRuntime(app, `http://127.0.0.1:${realPort}`, resolve(appDirectory, fromSource ? "packages/mcp/src/stdio.ts" : "build/mcp/stdio.js"));
+    await startMobileLinkRuntime(app).catch(error => console.error("设备互联启动失败：", error));
+  }
   console.log(`[服务监听地址]: 0.0.0.0:${realPort}`);
   console.log(`[启动耗时]: ${(Date.now() - startTime).toFixed(2)}ms`);
 });

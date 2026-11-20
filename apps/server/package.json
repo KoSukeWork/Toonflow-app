@@ -6,6 +6,7 @@
     "./app": "./src/app.ts",
     "./remoteConnection": "./src/remoteConnection.ts",
     "./desktop": "./src/types/desktop.ts",
+    "./auth": "./src/types/auth.ts",
     "./platform": "./src/lib/platform.ts",
     "./documentFormats": "./src/lib/documentFormats.ts",
     "./nodeMenu": "./src/lib/nodeMenu.ts",

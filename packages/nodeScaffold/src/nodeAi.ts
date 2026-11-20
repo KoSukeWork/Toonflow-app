@@ -70,6 +70,24 @@ const modelCacheKey = Symbol.for("toonflow.nodeModels");
 const modelCacheHost = globalThis as typeof globalThis & { [modelCacheKey]?: Map<string, Promise<unknown[]>> };
 const modelCache = modelCacheHost[modelCacheKey] ??= new Map<string, Promise<unknown[]>>();
 
+// ACT: 节点插件分别打包，凭据仍由当前宿主页面提供。
+const identityKey = Symbol.for("toonflow.nodeApiUser");
+const identityHost = globalThis as typeof globalThis & { [identityKey]?: string };
+
+export function setNodeAiRequestIdentity(userId: string) {
+  identityHost[identityKey] = userId;
+}
+
+async function requestNodeApi(path: string, options: RequestInit) {
+  const userId = identityHost[identityKey];
+  if (!userId) return fetch(path, options);
+  const headers = new Headers(options.headers);
+  headers.set("x-toonflow-user", userId);
+  const response = await fetch(path, { ...options, headers });
+  if (response.status === 401) window.location.reload();
+  return response;
+}
+
 type MediaPriceCache = {
   prices: Map<string, { expires: number; value: Promise<NodeMediaPrice | null> }>;
   requestedAt: Map<string, number>;
@@ -98,7 +116,7 @@ async function readModels<T>(url: string, signal: AbortSignal): Promise<T[]> {
   signal.throwIfAborted();
   let pending = modelCache.get(url);
   if (!pending) {
-    const request = fetch(url, { cache: "no-store" }).then(readResult<unknown[]>).catch(error => {
+    const request = requestNodeApi(url, { cache: "no-store" }).then(readResult<unknown[]>).catch(error => {
       if (modelCache.get(url) === request) modelCache.delete(url);
       throw error;
     });
@@ -127,7 +145,7 @@ async function requestModel(input: NodeAiRequest, context: Context, model: Model
   const stream = createAssistantMessageEventStream();
   try {
     signal.throwIfAborted();
-    const response = await fetch("/api/ai/generate", {
+    const response = await requestNodeApi("/api/ai/generate", {
       method: "POST", headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
       body: JSON.stringify({ providerId, modelId, context, directory, references }), signal,
     });
@@ -215,7 +233,7 @@ export function useNodeAi() {
         || ("firstFrame" in input && input.firstFrame) || ("lastFrame" in input && input.lastFrame));
       const pending = { expires: Infinity, value: Promise.resolve<NodeMediaPrice | null>(null) };
       // ACT: 最多缓存 500 条 / 30 秒；参考文件没有前端修订号，只合并进行中的查询，避免同路径覆盖后复用旧价。
-      pending.value = fetch("/api/ai/media/price", {
+      pending.value = requestNodeApi("/api/ai/media/price", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
         body: JSON.stringify(input),
@@ -248,7 +266,7 @@ export function useNodeAi() {
   }
 
   async function generateMedia<T extends "image" | "video" | "audio">(mediaType: T, input: NodeImageRequest | NodeVideoRequest | NodeAudioRequest, signal?: AbortSignal) {
-    return readResult<{ path: string; mimeType: string; mediaType: T }[]>(await fetch("/api/ai/media/generate", {
+    return readResult<{ path: string; mimeType: string; mediaType: T }[]>(await requestNodeApi("/api/ai/media/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-toonflow-workspace": "1" },
       body: JSON.stringify({ ...input, mediaType }),

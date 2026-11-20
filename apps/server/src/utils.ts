@@ -9,6 +9,7 @@ import * as mediaBilling from "@/utils/media/billing";
 import * as ffmpeg from "@/utils/ffmpeg";
 import * as pluginInstall from "@/utils/plugins/install";
 import conf, { cleanNodeMenuSettings, removeLegacySettings } from "@/utils/conf";
+import * as preferences from "@/utils/conf/preferences";
 import * as ai from "@/utils/ai";
 import * as plugins from "@/utils/plugins/tools";
 import * as nodePlugins from "@/utils/plugins/nodes";
@@ -40,6 +41,7 @@ export default {
   ffmpeg,
   pluginInstall,
   conf,
+  preferences,
   cleanNodeMenuSettings,
   removeLegacySettings,
   ai,

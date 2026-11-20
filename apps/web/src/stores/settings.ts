@@ -5,6 +5,7 @@ import { ElMessage } from "element-plus";
 import { invalidateNodeModels } from "@toonflow/nodes-scaffold/nodeAi";
 import { canvasShortcutFields, defaultCanvasShortcuts, getShortcutBindings, isShortcutAllowed, normalizeShortcut, type CanvasShortcuts } from "@/lib/canvasShortcuts";
 import { normalizeNodeMenu, type StoredNodeMenuItem } from "@toonflow/server/nodeMenu";
+import { authState } from "@/lib/auth";
 import "element-plus/es/components/message/style/css";
 
 export const settings = ref<Record<string, unknown>>({});
@@ -12,9 +13,12 @@ export const settings = ref<Record<string, unknown>>({});
 let settingsReady = false;
 let saveQueue = Promise.resolve();
 let applyingSettings = false;
+let settingsOwner = "";
+let savedSettings: Record<string, unknown> = {};
 
 export const settingsStorage = {
   getItem(key: string) {
+    if (settingsOwner) return key === "toonflow.projectList" ? null : sessionStorage.getItem(`toonflow:${settingsOwner}:${key}`);
     const stores = settings.value.stores as Record<string, unknown> | undefined;
     if (stores && Object.hasOwn(stores, key)) return JSON.stringify(stores[key]);
     // ACT: 只迁移当前来源可读取的旧缓存，保留原值；不同端口的 localStorage 不能互读。
@@ -23,6 +27,10 @@ export const settingsStorage = {
     return value;
   },
   setItem(key: string, value: string) {
+    if (settingsOwner) {
+      if (key !== "toonflow.projectList") sessionStorage.setItem(`toonflow:${settingsOwner}:${key}`, value);
+      return;
+    }
     settings.value.stores = { ...(settings.value.stores as Record<string, unknown> | undefined), [key]: JSON.parse(value) };
   },
 };
@@ -105,6 +113,8 @@ export async function loadSettings() {
   if (data.code !== 200 || !data.data || typeof data.data !== "object" || Array.isArray(data.data)) {
     throw new Error("读取设置失败");
   }
+  settingsOwner = authState.value.user?.id ?? "";
+  if (settingsOwner) savedSettings = structuredClone(data.data);
   settings.value = data.data;
   // 等初始化引发的监听执行完，再允许自动保存。
   await nextTick();
@@ -117,15 +127,24 @@ export function saveSettings(update?: (current: Record<string, unknown>) => Reco
     const patch = update?.(settings.value);
     if (update && !patch) return false;
     const requestedNodeMenu = JSON.stringify(((patch?.general ?? settings.value.general) as { nodeMenu?: unknown } | undefined)?.nodeMenu);
+    const current = settings.value;
+    const next = { ...current, ...patch };
+    const submitted = settingsOwner ? JSON.parse(JSON.stringify(next)) as Record<string, unknown> : undefined;
+    const changes = submitted && [...new Set([...Object.keys(savedSettings), ...Object.keys(submitted)])]
+      .filter(key => JSON.stringify(savedSettings[key]) !== JSON.stringify(submitted[key]))
+      .map(key => ({ key, before: savedSettings[key], value: submitted[key] }));
+    if (changes && !changes.length) return true;
+    const previousValues = Object.fromEntries(Object.keys(patch ?? {}).map(key => [key, JSON.stringify(current[key])]));
     const { data } = await axios.put<{ code: number; data: { customProviders?: CustomProvider[]; mediaProvider?: { id: string }; modelRefreshErrors?: string[]; nodeMenu?: StoredNodeMenuItem[] | null } | null }>(
-      "/api/settings/save", { settings: { ...settings.value, ...patch } }, { headers: { "x-toonflow-workspace": "1" } },
+      "/api/settings/save", changes ? { owner: settingsOwner, changes } : { settings: next }, { headers: { "x-toonflow-workspace": "1" } },
     );
     if (data.code !== 200) throw new Error("保存设置失败");
     const providers = data.data?.customProviders;
     if ((patch && Object.hasOwn(patch, "customProviders")) || providers) invalidateNodeModels("language");
     if (patch || providers) {
       applyingSettings = true;
-      try { settings.value = { ...settings.value, ...patch, ...(providers ? { customProviders: providers } : {}) }; }
+      const applicable = Object.fromEntries(Object.entries(patch ?? {}).filter(([key]) => !submitted || previousValues[key] === JSON.stringify(settings.value[key])));
+      try { settings.value = { ...settings.value, ...applicable, ...(providers ? { customProviders: providers } : {}) }; }
       finally { applyingSettings = false; }
     }
     if (data.data && Object.hasOwn(data.data, "nodeMenu")
@@ -147,6 +166,15 @@ export function saveSettings(update?: (current: Record<string, unknown>) => Reco
       window.dispatchEvent(new Event("toonflow:provider-config-changed"));
     }
     if (data.data?.modelRefreshErrors?.length) ElMessage.warning(`API Key 已保存，部分模型获取失败：${data.data.modelRefreshErrors.join("；")}`);
+    if (submitted) {
+      if (providers) submitted.customProviders = providers;
+      if (data.data && Object.hasOwn(data.data, "nodeMenu") && submitted.general) {
+        const general = submitted.general as Record<string, unknown>;
+        if (data.data.nodeMenu?.length) general.nodeMenu = data.data.nodeMenu;
+        else delete general.nodeMenu;
+      }
+      savedSettings = submitted;
+    }
     return true;
   });
   saveQueue = saving.then(() => {}, () => {});
@@ -155,5 +183,5 @@ export function saveSettings(update?: (current: Record<string, unknown>) => Reco
 
 watch(settings, () => {
   if (!settingsReady || applyingSettings) return;
-  void saveSettings().catch(() => { ElMessage.error("设置保存失败，请稍后重试"); });
+  void saveSettings().catch(error => { ElMessage.error(axios.isAxiosError(error) && error.response?.data?.message || "设置保存失败，请稍后重试"); });
 }, { deep: true, flush: "sync" });

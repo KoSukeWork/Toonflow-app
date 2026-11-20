@@ -363,7 +363,7 @@ async function generate() {
       basePlan ? directorPlanSchema.parse({ name: basePlan.name, duration: basePlan.duration, tracks: basePlan.tracks, cameraFrames: basePlan.cameraFrames }) : undefined,
       JSON.parse(JSON.stringify(plans.value)),
     );
-    const directory = mediaReferences.some(item => item.dataType !== "STRING") ? (await workspaceFiles.list()).directory : undefined;
+    const { directory } = await workspaceFiles.list();
     if (disposed) return;
     await ai.generate({
       references: mediaReferences,
