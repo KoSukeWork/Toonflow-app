@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { basename, dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { readFile, readdir } from "@toonflow/file";
 import { calculateContextTokens, estimateTokens, getLastAssistantUsage, parseSessionEntries, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession, FileEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { AgentEvent, AgentMention, AgentSubAgent, AgentToolCall } from "@/agent/runtime/types";
 import { agentMentionsSchema } from "@/agent/runtime/mentions";
 import conf from "@/utils/conf";
+import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
 import { providerSchema, getModelLimits } from "@/utils/ai";
 import { lockWorkspaceFiles, resolveWorkspacePath, writeWorkspaceFile } from "@/utils/workspace/files";
 import { getReadableFileMimeType } from "@/lib/documentFormats";
@@ -38,6 +40,21 @@ type SessionMessage = {
 const activeSessions = new Map<string, ActiveAgentSession>();
 const sessionKey = (path: string) => process.platform === "win32" ? resolve(path).toLowerCase() : resolve(path);
 
+function sessionLocation(cwd: string) {
+  if (!isMultiUserEnabled()) return { root: cwd, path: ".agent/sessions" };
+  const user = getCurrentUser();
+  if (!user) throw Object.assign(new Error("请先登录"), { status: 401 });
+  const root = dirname(conf.path);
+  const project = relative(join(root, "workspaces"), cwd).split(sep).join("/");
+  const key = createHash("sha256").update(project).digest("hex");
+  return { root, path: `users/${user.id}/conversations/${key}` };
+}
+
+export function resolveSessionPath(cwd: string, file?: string) {
+  const location = sessionLocation(cwd);
+  return resolveWorkspacePath(location.root, file ? `${location.path}/${file}` : location.path, true);
+}
+
 export function getActiveAgentSession(path: string) {
   return activeSessions.get(sessionKey(path));
 }
@@ -60,7 +77,8 @@ export function hasPendingAgentQuestion(active: ActiveAgentSession, visited = ne
 
 export function trackAgentEvent(cwd: string, file: string | undefined, event: AgentEvent) {
   if (!file || event.type !== "question") return;
-  const active = getActiveAgentSession(resolve(cwd, ".agent/sessions", file));
+  const location = sessionLocation(cwd);
+  const active = getActiveAgentSession(resolve(location.root, location.path, file));
   const tool = active?.tools.get(event.toolCallId);
   if (tool) tool.question = { callId: event.callId, title: event.title, question: event.question, options: event.options, fields: event.fields };
 }
@@ -83,7 +101,7 @@ export function getParentSessionFile(history: SessionManager) {
 
 async function updateAgentSession(cwd: string, file: string, update: (history: SessionManager, active?: ActiveAgentSession) => void | Promise<void>) {
   if (!/^[\w-]+\.jsonl$/.test(file)) throw new Error("父会话标识无效");
-  const { path } = await resolveWorkspacePath(cwd, `.agent/sessions/${file}`);
+  const { path } = await resolveSessionPath(cwd, file);
   const active = getActiveAgentSession(path);
   if (active) return update(active.history, active);
   const release = lockWorkspaceFiles([path]);
@@ -215,7 +233,7 @@ export async function deleteAgentMessage(cwd: string, path: string, options: { e
 }
 
 export async function createAgentConversation(cwd: string, child?: Omit<AgentSubAgent, "file" | "status">) {
-  const { path: directory } = await resolveWorkspacePath(cwd, ".agent/sessions", true);
+  const { path: directory } = await resolveSessionPath(cwd);
   const history = SessionManager.create(cwd, directory, child ? { parentSession: child.parentFile } : undefined);
   const path = history.getSessionFile()!;
   if (child) {

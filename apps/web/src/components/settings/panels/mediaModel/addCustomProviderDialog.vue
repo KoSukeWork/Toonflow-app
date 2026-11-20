@@ -114,6 +114,7 @@ import type { MediaProvider } from "./types";
 import { providerPrompt } from "./providerPrompt";
 import { modelChoices, saveSettings } from "@/stores/settings";
 import { writeClipboardText } from "@/lib/clipboard";
+import { authState } from "@/lib/auth";
 import { isMobile } from "@/lib/platform";
 
 const { mode = "custom" } = defineProps<{ mode?: "builtin" | "custom" }>();
@@ -178,8 +179,8 @@ async function openAgent() {
     const { data } = await axios.get<{ data: { tools: { name: string; enabled: boolean; loadError?: string }[] } }>("/api/tools/get", { signal: controller.signal });
     if (controller.signal.aborted || !visible.value) return;
     const browser = data.data.tools.find(tool => tool.name === "browser");
-    if (!browser?.enabled) throw new Error("请先在「工具市场」安装并启用网页浏览器工具");
-    if (browser.loadError) throw new Error(`浏览器工具加载失败：${browser.loadError}`);
+    if (!authState.value.enabled && !browser?.enabled) throw new Error("请先在「工具市场」安装并启用网页浏览器工具");
+    if (!authState.value.enabled && browser?.loadError) throw new Error(`浏览器工具加载失败：${browser.loadError}`);
     askUserEnabled.value = data.data.tools.some(tool => tool.name === "askUser" && tool.enabled && !tool.loadError);
     providerAgentDialog.value ??= defineAsyncComponent(() => import("./providerAgentDialog.vue"));
     agentVisible.value = true;

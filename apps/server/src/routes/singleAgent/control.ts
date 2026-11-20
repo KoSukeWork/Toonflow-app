@@ -9,5 +9,6 @@ const inputSchema = z.strictObject({ sessionId: z.uuid(), runId: z.uuid().option
 export default Router().post("/", validateFields(inputSchema.shape), async (req, res) => {
   u.mcpControl.assertAppRequest(req);
   const { sessionId, action, runId } = inputSchema.parse(req.body);
+  await u.singleAgent.authorizeSessionRequest(req, sessionId, action === "close");
   res.json(success(await u.singleAgent.control(sessionId, action, runId)));
 });

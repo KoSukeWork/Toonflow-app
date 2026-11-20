@@ -26,7 +26,7 @@
           <el-image class="brandLogo" :src="logoUrl" fit="contain" alt="Toonflow" />
           <h1>Toonflow</h1>
         </div>
-        <div v-if="!authState.enabled" class="promptArea">
+        <div class="promptArea">
           <span class="arrowHint inspirationHint">
             灵感创作模式
             <svg viewBox="0 0 60 60" fill="none" aria-hidden="true">
@@ -44,16 +44,16 @@
             <el-input ref="promptInput" v-model="prompt" type="textarea" :rows="4" resize="none" :disabled="creating || opening" :placeholder="promptPlaceholder" aria-label="创作描述" @paste.capture="pasteAttachments" />
             <template #footer>
               <div class="composerFooter">
-                <workspacePicker ref="promptWorkspacePicker" v-model="workspaceDirectory" :disabled="creating || opening" />
+                <workspacePicker v-if="!authState.enabled" ref="promptWorkspacePicker" v-model="workspaceDirectory" :disabled="creating || opening" />
                 <el-space class="sendActions" wrap :size="12">
                   <el-button text circle :icon="IconPaperclip" :disabled="creating || opening" aria-label="添加附件" title="添加附件" @click="attachmentInput?.click()" />
                   <modelPopover v-model="selectedModel" v-model:reasoningEffort="reasoningEffort" class="modelSelect" :disabled="creating || opening" />
-                  <el-button class="sendButton" type="primary" :circle="!!workspaceDirectory" :icon="workspaceDirectory ? IconArrowUp : IconFolder" :loading="creating" :disabled="creating || opening" :aria-label="workspaceDirectory ? '发送' : '选择工作目录'" @click="workspaceDirectory ? createProject() : promptWorkspacePicker?.chooseDirectory()">
-                    <template v-if="!workspaceDirectory" #default>选择工作目录</template>
+                  <el-button class="sendButton" type="primary" :circle="canStartProject" :icon="canStartProject ? IconArrowUp : IconFolder" :loading="creating" :disabled="creating || opening" :aria-label="canStartProject ? '发送' : '选择工作目录'" @click="canStartProject ? createProject() : promptWorkspacePicker?.chooseDirectory()">
+                    <template v-if="!canStartProject" #default>选择工作目录</template>
                   </el-button>
                 </el-space>
               </div>
-              <p v-if="!workspaceDirectory" class="workspaceHint" role="status">请先选择一个空文件夹作为工作目录，画布和素材会保存在这里。</p>
+              <p v-if="!canStartProject" class="workspaceHint" role="status">请先选择一个空文件夹作为工作目录，画布和素材会保存在这里。</p>
             </template>
           </el-card>
         </div>
@@ -168,10 +168,7 @@ const placeholderPhrases = [
 const promptPlaceholder = ref(translate(placeholderPhrases[0]!));
 
 onMounted(() => {
-  if (authState.value.enabled) {
-    void loadRegisteredProjects();
-    return;
-  }
+  if (authState.value.enabled) void loadRegisteredProjects();
   window.addEventListener("dragend", clearAttachmentDrag, true);
   window.addEventListener("drop", clearAttachmentDrag, true);
   window.addEventListener("blur", clearAttachmentDrag);
@@ -220,6 +217,7 @@ watch([creating, opening], ([creating, opening]) => {
   if (creating || opening) clearAttachmentDrag();
 }, { flush: "sync" });
 
+const canStartProject = computed(() => authState.value.enabled || !!workspaceDirectory.value);
 const selectedModel = ref("");
 const reasoningEffort = ref("");
 const sortDescending = ref(true);
@@ -393,8 +391,14 @@ async function renameProject(project: Project) {
   }
 }
 
+function prepareAgentMessage(directory: string) {
+  if (prompt.value.trim() || promptAttachments.value.length) {
+    workspaceStore.pendingAgentMessage = { directory, prompt: prompt.value, attachments: [...promptAttachments.value], model: selectedModel.value, reasoningEffort: reasoningEffort.value };
+  }
+}
+
 async function createProject(fromPrompt = true) {
-  if (creating.value || opening.value || (fromPrompt && !workspaceDirectory.value)) return;
+  if (creating.value || opening.value || (fromPrompt && !canStartProject.value)) return;
   creating.value = true;
   try {
     if (authState.value.enabled) {
@@ -405,6 +409,7 @@ async function createProject(fromPrompt = true) {
       if (!result) return;
       const { data } = await axios.post<{ data: RegisteredProject }>("/api/projects/create", { name: result.value.trim() });
       await loadRegisteredProjects();
+      if (fromPrompt) prepareAgentMessage(data.data.directory);
       await router.push({ name: "workspace", params: { projectId: data.data.id } });
       return;
     }
@@ -421,9 +426,7 @@ async function createProject(fromPrompt = true) {
     if (!empty) return ElMessage.warning("该文件夹不为空，请重新选择空文件夹；已有项目请使用“导入项目”或点击项目列表打开。");
     await useWorkspaceFiles(directory).writeJson("画布1.json", { toonflowCanvas: true, nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, true);
     await workspaceStore.openProject(directory);
-    if (fromPrompt && (prompt.value.trim() || promptAttachments.value.length)) {
-      workspaceStore.pendingAgentMessage = { directory: workspaceStore.project!.directory, prompt: prompt.value, attachments: [...promptAttachments.value], model: selectedModel.value, reasoningEffort: reasoningEffort.value };
-    }
+    if (fromPrompt) prepareAgentMessage(workspaceStore.project!.directory);
     await router.push("/workspace");
   } catch (err) {
     ElMessage.error(axios.isAxiosError<{ message?: string }>(err)

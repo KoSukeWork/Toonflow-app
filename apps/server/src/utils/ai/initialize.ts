@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import tfRouter from "@toonflow/providers/language/tfRouter";
 import tfRouterMedia from "@toonflow/providers/media/tfRouter";
 import conf from "@/utils/conf";
@@ -28,6 +29,8 @@ async function refreshLanguageModels(previousSettings?: Record<string, unknown>)
   const index = current.findIndex(item => item?.id === provider.id && item.apiUrl === provider.apiUrl
     && item.protocol === provider.protocol && item.apiKey === provider.apiKey);
   if (index === -1) return;
+  // 刷新等待上游期间，管理员可能已手动调整同一模型列表。
+  if (!isDeepStrictEqual(current[index].models, provider.models)) return current;
   const providers = current.map((item, itemIndex) => itemIndex === index ? { ...item, models } : item);
   conf.set("settings.customProviders", providers);
   return providers;

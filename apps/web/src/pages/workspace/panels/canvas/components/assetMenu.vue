@@ -2,7 +2,7 @@
   <el-dropdown ref="menu" trigger="contextmenu" virtualTriggering :virtualRef="menuAnchor" placement="bottom-start" :showArrow="false" :hideOnClick="false" popperClass="assetActionMenu" @command="handleCommand" @visibleChange="(opened: boolean) => { if (!opened) moveVisible = false; }">
     <template #dropdown>
       <el-dropdown-menu v-if="activeEntry">
-        <el-dropdown-item command="move" :disabled="busy">
+        <el-dropdown-item v-if="canManage" command="move" :disabled="busy">
           <el-popover v-model:visible="moveVisible" trigger="hover" placement="right-start" :width="220" :offset="0" :showArrow="false" :showAfter="0" :hideAfter="150" appendTo=".assetActionMenu">
             <template #reference>
               <span class="moveTrigger"><span class="moveLabel">移动到</span><icon-chevron-right :size="14" /></span>
@@ -15,9 +15,9 @@
             </div>
           </el-popover>
         </el-dropdown-item>
-        <el-dropdown-item v-if="activeEntry.type === 'file'" command="download" divided>下载</el-dropdown-item>
-        <el-dropdown-item command="rename" :disabled="busy">重命名</el-dropdown-item>
-        <el-dropdown-item class="deleteAction" command="delete" :disabled="busy || !!activeEntry.children?.length" :title="activeEntry.children?.length ? '请先删除文件夹内的素材' : undefined">删除</el-dropdown-item>
+        <el-dropdown-item v-if="activeEntry.type === 'file'" command="download" :divided="canManage">下载</el-dropdown-item>
+        <el-dropdown-item v-if="canManage" command="rename" :disabled="busy">重命名</el-dropdown-item>
+        <el-dropdown-item v-if="canManage" class="deleteAction" command="delete" :disabled="busy || !!activeEntry.children?.length" :title="activeEntry.children?.length ? '请先删除文件夹内的素材' : undefined">删除</el-dropdown-item>
       </el-dropdown-menu>
     </template>
   </el-dropdown>
@@ -32,7 +32,7 @@ import { ElMessage, ElMessageBox, type DropdownInstance } from "element-plus";
 import { IconChevronRight, IconFolder, IconFolderPlus } from "@tabler/icons-vue";
 
 type AssetEntry = { name: string; path: string; type: "file" | "directory"; children?: AssetEntry[] };
-const props = defineProps<{ entries: AssetEntry[] }>();
+const props = defineProps<{ entries: AssetEntry[]; canManage: boolean }>();
 const emit = defineEmits<{ changed: [path?: string, target?: string] }>();
 const menu = ref<DropdownInstance>();
 const menuAnchor = shallowRef({ getBoundingClientRect: () => new DOMRect() });

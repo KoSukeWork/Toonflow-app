@@ -1,3 +1,4 @@
+import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { lstat, readFile, realpath } from "@toonflow/file";
 import { assetRequestSchema } from "@toonflow/tool-asset-operator/runtime";
@@ -31,6 +32,9 @@ export function createAssetContext(cwd: string): NonNullable<ToolContext["assets
     async execute(id, params, signal, onUpdate, executionContext) {
       const request = assetRequestSchema.parse(params);
       const { action, path, target } = request;
+      if (isMultiUserEnabled() && getCurrentUser()?.role !== "admin" && !["list", "read", "import"].includes(action)) {
+        throw Object.assign(new Error("只有管理员可以维护公共素材"), { status: 403 });
+      }
       signal?.throwIfAborted();
       let result;
       if (action === "list") {

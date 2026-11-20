@@ -7,6 +7,10 @@ import { registerApiIdentity } from "@/lib/auth";
 
 type WorkspaceEntry = { name: string; path: string; type: "file" | "directory" };
 export type TextSnapshot = { text: string; revision: string; encoding: "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be" };
+export function isStaleWorkspaceFile(error: unknown) {
+  return axios.isAxiosError<{ data?: { code?: string } }>(error)
+    && error.response?.status === 409 && error.response.data?.data?.code === "ESTALE";
+}
 const client = axios.create({ baseURL: "/api/workspaces/files", headers: { "x-toonflow-workspace": "1" } });
 registerApiLanguage(client);
 registerApiIdentity(client);

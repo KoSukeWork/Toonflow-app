@@ -16,9 +16,10 @@ const inputSchema = z.strictObject({
 }).refine(input => (input.result !== undefined) !== (input.error !== undefined), "必须提供工具结果或错误信息")
   .refine(input => !input.partial || input.result !== undefined, "工具增量必须提供结果");
 
-export default Router().post("/", validateFields(inputSchema.shape), (req, res) => {
+export default Router().post("/", validateFields(inputSchema.shape), async (req, res) => {
   u.mcpControl.assertAppRequest(req);
   const { sessionId, callId, ...result } = inputSchema.parse(req.body);
+  await u.singleAgent.authorizeSessionRequest(req, sessionId);
   u.singleAgent.toolResult(sessionId, callId, result);
   res.json(success());
 });

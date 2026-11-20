@@ -12,6 +12,7 @@ import { onActivated, onBeforeUnmount, onDeactivated, ref, shallowReactive, shal
 import { DockviewVue, type DockviewApi, type DockviewReadyEvent } from "dockview-vue";
 import { ElMessage } from "element-plus";
 import type { ExtResource } from "@toonflow/ext-scaffold/runtime";
+import type { NodeDocumentState } from "@toonflow/nodes-scaffold/nodeDocument";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { settings, settingsStorage } from "@/stores/settings";
 import useWorkspaceFiles from "@/lib/workspaceFiles";
@@ -37,7 +38,7 @@ const props = defineProps<{
   saveNode: (directory: string, canvasPath: string, nodeId: string, handleId: string, text: string, expectedText?: string) => Promise<void>;
   mountNode: (directory: string, canvasPath: string, nodeId: string, target: HTMLElement) => Promise<() => void>;
   resolveNodeFile: (directory: string, path: string) => Promise<{ canvasPath: string; nodeId: string; label: string } | undefined>;
-  observeNode: (directory: string, canvasPath: string, nodeId: string, onState: (state: { dirty: boolean; error: string; deleted: boolean }) => void) => Promise<{ release(): void; flushSave(): Promise<void> }>;
+  observeNode: (directory: string, canvasPath: string, nodeId: string, onState: (state: NodeDocumentState) => void) => Promise<{ release(): void; flushSave(): Promise<void> }>;
   flushNodes: () => Promise<void>;
   fileAction: (directory: string, action: "copy" | "rename" | "move" | "delete", path: string, target?: string, nodeId?: string) => Promise<void>;
 }>();

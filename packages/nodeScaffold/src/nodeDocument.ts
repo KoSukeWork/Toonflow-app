@@ -1,7 +1,7 @@
 import { inject, onScopeDispose, reactive } from "vue";
 import { useNodeId } from "@vue-flow/core";
 
-export type NodeDocumentState = { dirty: boolean; error: string; deleted: boolean };
+export type NodeDocumentState = { dirty: boolean; error: string; deleted: boolean; canvasConflict?: boolean };
 
 export type NodeDocumentContext = {
   targets: Map<string, HTMLElement>;

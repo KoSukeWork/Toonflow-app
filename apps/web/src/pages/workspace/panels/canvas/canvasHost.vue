@@ -11,6 +11,7 @@
       :inert="entry.key !== activeKey"
       :runtimeKey="entry.key"
       :initialCanvasId="entry.fileName"
+      :initialSnapshot="entry.snapshot"
       :active="active && entry.key === activeKey"
       :settingsVisible="settingsVisible"
       :activateCanvas="activateCanvas"
@@ -28,12 +29,12 @@ import useWorkspaceFiles from "@/lib/workspaceFiles";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { createCanvasMention, mentionNodeOutputs, queryMentionNodes, type MentionCanvasSource } from "@toonflow/server/agent/mentionSources";
 import type { NodeDocumentState } from "@toonflow/nodes-scaffold/nodeDocument";
-import { copyCanvasFiles, readCanvasFiles, type DocumentNode, type DocumentNodeOptions } from "./canvasFiles";
+import { copyCanvasFiles, readCanvasFiles, readCanvasSnapshot, type CanvasSnapshot, type DocumentNode, type DocumentNodeOptions } from "./canvasFiles";
 
 const props = withDefaults(defineProps<{ active?: boolean; settingsVisible?: boolean }>(), { active: true, settingsVisible: false });
 const selectedTool = defineModel<"move" | "hand">("selectedTool", { default: "move" });
 type CanvasInstance = InstanceType<typeof canvasPanel>;
-const entries = shallowRef<{ key: string; fileName?: string }[]>([{ key: crypto.randomUUID() }]);
+const entries = shallowRef<{ key: string; fileName?: string; snapshot?: CanvasSnapshot }[]>([{ key: crypto.randomUUID() }]);
 const activeKey = ref(entries.value[0]!.key);
 const instances = shallowReactive(new Map<string, CanvasInstance>());
 const activeInstance = computed(() => instances.get(activeKey.value));
@@ -44,6 +45,8 @@ const lifetime = new AbortController();
 const workspaceStore = useWorkspaceStore();
 const canvases = shallowRef<{ id: string; name: string }[]>([]);
 let fileActionBusy = false;
+const conflicts = computed(() => [...instances].flatMap(([key, panel]) =>
+  panel.canvasConflict && panel.canvasId ? [{ key, path: panel.canvasId, message: panel.canvasSaveError }] : []));
 provide("canvasList", canvases);
 provide("canvasFolders", shallowRef([]));
 provide("canvasLoadedDirectories", shallowRef<string[]>([]));
@@ -60,7 +63,16 @@ watch(canvases, (current, previous) => {
   });
   if (!entries.value.some(entry => entry.key === activeKey.value)) activeKey.value = entries.value[0]?.key ?? "";
 }, { flush: "sync" });
-onScopeDispose(() => lifetime.abort(new Error("工作区已关闭")));
+function beforeUnload(event: BeforeUnloadEvent) {
+  if (![...instances.values()].some(panel => panel.canvasDirty || panel.canvasConflict)) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+window.addEventListener("beforeunload", beforeUnload);
+onScopeDispose(() => {
+  window.removeEventListener("beforeunload", beforeUnload);
+  lifetime.abort(new Error("工作区已关闭"));
+});
 
 function setInstance(key: string, value: Element | ComponentPublicInstance | null) {
   if (value) instances.set(key, value as CanvasInstance);
@@ -85,16 +97,15 @@ async function ensureCanvas(fileName: string, signal?: AbortSignal, activate = f
   if (!canvases.value.some(canvas => canvas.id === fileName)) {
     const directory = workspaceStore.project?.directory;
     if (!directory) throw new Error("请先选择工作目录");
-    const data = await useWorkspaceFiles(directory).readJson<{ toonflowCanvas?: boolean; nodes?: unknown[]; edges?: unknown[]; viewport?: { x: number; y: number; zoom: number } }>(fileName);
+    await readCanvasSnapshot(useWorkspaceFiles(directory), fileName, callSignal);
     checkDirectory(directory);
     callSignal.throwIfAborted();
-    if (data?.toonflowCanvas !== true || !Array.isArray(data.nodes) || !Array.isArray(data.edges) || !data.viewport
-      || ![data.viewport.x, data.viewport.y, data.viewport.zoom].every(Number.isFinite) || data.viewport.zoom <= 0) throw new Error("画布文件格式无效");
     fileName = canonicalCanvasPath(fileName);
     if (!canvases.value.some(canvas => canvas.id === fileName)) canvases.value = [...canvases.value, { id: fileName, name: canvasName(fileName) }];
   }
   const previousKey = activeKey.value;
   let entry = entries.value.find(item => instances.get(item.key)?.canvasId === fileName || (!instances.get(item.key)?.canvasId && item.fileName === fileName));
+  const existing = entry && instances.get(entry.key)?.canvasReady;
   if (!entry) {
     // ACT: 已打开的画布保留至退出工作区，避免卸载后台节点任务；大量画布时可按任务引用回收空闲实例。
     entry = { key: crypto.randomUUID(), fileName };
@@ -103,17 +114,89 @@ async function ensureCanvas(fileName: string, signal?: AbortSignal, activate = f
   if (activate) activeKey.value = entry.key;
   const key = entry.key;
   try {
-    const panel = await waitForControlValue(() => {
-      const instance = instances.get(key);
-      return instance?.canvasReady || instance?.loadError ? instance : undefined;
-    }, callSignal);
-    if (panel.loadError) throw new Error(panel.loadError);
+    const panel = await waitForPanel(key, callSignal);
+    if (existing && activate) {
+      const latest = await panel.refreshSnapshot(callSignal);
+      if (latest && !fileActionBusy) {
+        return (await replaceCanvas(key, fileName, latest.snapshot, callSignal,
+          () => !fileActionBusy && !panel.canvasConflict && !panel.canvasDirty && panel.draftUnchanged(latest.revision))) ?? panel;
+      }
+    }
     return panel;
   } catch (error) {
     if (activate && activeKey.value === key) activeKey.value = previousKey;
     if (!instances.get(key)?.canvasId) entries.value = entries.value.filter(item => item.key !== key);
     throw error;
   }
+}
+
+async function waitForPanel(key: string, signal: AbortSignal) {
+  const panel = await waitForControlValue(() => {
+    const instance = instances.get(key);
+    return instance?.canvasReady || instance?.loadError ? instance : undefined;
+  }, signal);
+  if (panel.loadError) throw new Error(panel.loadError);
+  return panel;
+}
+
+async function replaceCanvas(oldKey: string, fileName: string, snapshot: CanvasSnapshot, signal: AbortSignal, canReplace: () => boolean) {
+  const entry = { key: crypto.randomUUID(), fileName, snapshot };
+  entries.value = [...entries.value, entry];
+  let replaced = false;
+  try {
+    const panel = await waitForPanel(entry.key, signal);
+    signal.throwIfAborted();
+    const previous = instances.get(oldKey);
+    if (!previous || !canReplace()) return;
+    previous.cancelSave();
+    if (activeKey.value === oldKey) activeKey.value = entry.key;
+    entries.value = entries.value.filter(item => item.key !== oldKey);
+    replaced = true;
+    return panel;
+  } finally {
+    if (!replaced) {
+      instances.get(entry.key)?.cancelSave();
+      entries.value = entries.value.filter(item => item.key !== entry.key);
+    }
+  }
+}
+
+async function recoverCanvas(key: string, action: "copy" | "reload") {
+  const directory = workspaceStore.project?.directory;
+  if (!directory) throw new Error("请先打开工程");
+  checkDirectory(directory);
+  const panel = instances.get(key);
+  if (!panel?.canvasConflict || !panel.canvasId) throw new Error("画布冲突已处理");
+  if (fileActionBusy || panel.saveBusy) throw new Error("画布文件正在操作，请稍后重试");
+  fileActionBusy = true;
+  const signal = AbortSignal.any([lifetime.signal, AbortSignal.timeout(120000)]);
+  const files = useWorkspaceFiles(directory);
+  const source = panel.canvasId;
+  try {
+    let target = source;
+    let revision = panel.editVersion;
+    if (action === "copy") {
+      const draft = await panel.captureDraft();
+      checkDirectory(directory);
+      revision = draft.revision;
+      // ACT: 原目录可能已被移走，副本发布到工程根目录，不依赖原文件仍然存在。
+      target = `${canvasName(source).slice(0, 90)} 副本 ${crypto.randomUUID().slice(0, 8)}.json`;
+      const copies = await copyCanvasFiles(files, source, target, draft.data);
+      checkDirectory(directory);
+      canvases.value = [...canvases.value, ...copies];
+      if (!panel.draftUnchanged(revision)) return { target, replaced: false };
+    }
+    try {
+      const snapshot = await readCanvasSnapshot(files, target, signal);
+      checkDirectory(directory);
+      const replacement = await replaceCanvas(key, target, snapshot, signal, () => panel.draftUnchanged(revision));
+      if (!replacement && action === "reload") throw new Error("画布草稿在载入期间发生变化，已保留，请重试");
+      return { target, replaced: !!replacement };
+    } catch (error) {
+      if (action === "reload") throw error;
+      return { target, replaced: false };
+    }
+  } finally { fileActionBusy = false; }
 }
 
 async function activateCanvas(fileName: string, signal?: AbortSignal) {
@@ -404,6 +487,7 @@ const mentionSource: MentionCanvasSource = {
 };
 
 defineExpose({ canvasId, canvasReady, canvasListReady, getCanvasContext, readDocumentNode, readDocumentNodes, focusDocumentNode, saveDocumentNode, mountDocumentNode, observeDocumentNode, resolveDocumentNodeFile, performFileAction, flushSave, cancelSave,
+  conflicts, recoverCanvas,
   addNodeAtPointer: () => activeInstance.value?.addNodeAtPointer(),
   mentionSource,
   get saveBusy() { return fileActionBusy || [...instances.values()].some(panel => panel.saveBusy); },

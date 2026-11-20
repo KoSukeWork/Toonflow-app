@@ -7,6 +7,7 @@ import type { AgentImageReference } from "@/agent/runtime/imageAttachments";
 import { getRequestFiles, type RequestFile } from "@/utils/ai/requestFiles";
 import { createFileTransport, FileRequestLimitError } from "@/utils/ai/files";
 import conf from "@/utils/conf";
+import { isMultiUserEnabled } from "@/utils/auth";
 
 function contentHash(value: unknown) {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -43,6 +44,11 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
   const streamFunction = session.agent.streamFunction;
   session.agent.streamFunction = (model, context, options) => {
     const output = createAssistantMessageEventStream();
+    const publish = (event: AssistantMessageEvent) => {
+      if (event.type === "error" && isMultiUserEnabled()) {
+        output.push({ ...event, error: { ...event.error, errorMessage: event.reason === "aborted" ? "本次回复已停止" : "模型请求失败，请联系管理员检查供应商配置" } });
+      } else output.push(event);
+    };
     void (async () => {
       let partial: AssistantMessage | undefined;
       try {
@@ -273,14 +279,14 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
               }
             }
             if (start) { output.push(start); start = undefined; }
-            output.push(event);
+            publish(event);
             visible = true;
             if (event.type === "done" || event.type === "error") return;
           }
           if (retry) continue;
           const message = await stream.result();
           if (start) output.push(start);
-          output.push(message.stopReason === "error" || message.stopReason === "aborted"
+          publish(message.stopReason === "error" || message.stopReason === "aborted"
             ? { type: "error", reason: message.stopReason, error: message }
             : { type: "done", reason: message.stopReason as "stop" | "length" | "toolUse", message });
           return;
@@ -293,7 +299,7 @@ export function configureAgentRequests(session: AgentSession, limits?: { maxRequ
           usage: partial?.usage ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
           timestamp: Date.now(),
         };
-        output.push({ type: "error", reason: message.stopReason as "error" | "aborted", error: message });
+        publish({ type: "error", reason: message.stopReason as "error" | "aborted", error: message });
       } finally {
         output.end();
       }

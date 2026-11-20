@@ -66,8 +66,8 @@
         v-if="active && !settingsVisible && project?.directory && canvasReady && !flow.getNodes.value.length"
         :availableNodes="availableNodes"
         @create="createEmptyNode" />
-      <canvasMenu ref="canvasMenuRef" v-model:canvasId="canvasId" :directory="project?.directory" :initialCanvasId="initialCanvasId" :activateCanvas="activateCanvas" :flushSave="flushCanvases ?? flushCanvasSave">
-        <assetLibrary v-if="!authState.enabled" ref="assetLibraryRef" v-model="assetsVisible" :directory="project?.directory" />
+      <canvasMenu ref="canvasMenuRef" v-model:canvasId="canvasId" :directory="project?.directory" :initialCanvasId="initialCanvasId" :initialSnapshot="initialSnapshot" :applySnapshot="applySnapshot" :activateCanvas="activateCanvas" :flushSave="flushCanvases ?? flushCanvasSave">
+        <assetLibrary :canManage="canManageAssets" ref="assetLibraryRef" v-model="assetsVisible" :directory="project?.directory" />
       </canvasMenu>
       <canvasControls
         ref="canvasControlsRef"
@@ -148,6 +148,7 @@ import {
   type GraphEdge,
   type EdgeMouseEvent,
   type NodeTypesObject,
+  type ViewportTransform,
   type XYPosition,
 } from "@vue-flow/core";
 import { Background } from "@vue-flow/background";
@@ -174,9 +175,10 @@ import { useNodeEvent } from "@toonflow/nodes-scaffold/nodeEvent";
 import type { NodeDocumentContext, NodeDocumentState } from "@toonflow/nodes-scaffold/nodeDocument";
 import { useNodeToolsContext } from "@toonflow/nodes-scaffold/nodeTools";
 import { useWorkspaceStore } from "@/stores/workspace";
-import { generalSettings } from "@/stores/settings";
+import { generalSettings, settingsStorage } from "@/stores/settings";
 import { getShortcutBindings, shortcutLabel, shortcutMatches, shortcutPressed } from "@/lib/canvasShortcuts";
-import useWorkspaceFiles from "@/lib/workspaceFiles";
+import useWorkspaceFiles, { isStaleWorkspaceFile, type TextSnapshot } from "@/lib/workspaceFiles";
+import { readCanvasSnapshot, type CanvasFile, type CanvasSnapshot } from "./canvasFiles";
 import anonymousData from "@/lib/anonymousData";
 import { createClipboardMediaFile, dropCanvasFiles, getClipboardMediaFiles, importCanvasFiles, isCanvasFileDrag } from "./canvasDrop";
 import "@vue-flow/core/dist/style.css";
@@ -188,11 +190,13 @@ const props = withDefaults(defineProps<{
   settingsVisible?: boolean;
   runtimeKey?: string;
   initialCanvasId?: string;
+  initialSnapshot?: CanvasSnapshot;
   activateCanvas?: (canvasId: string, signal?: AbortSignal) => Promise<void>;
   resolveCanvasContext?: (canvasId: string) => CanvasContext | undefined;
   flushCanvases?: (action?: () => Promise<void>) => Promise<void>;
 }>(), { active: true, settingsVisible: false });
 const { project } = storeToRefs(useWorkspaceStore());
+const workspaceDirectory = project.value?.directory;
 
 const canvasElement = ref<HTMLElement>();
 const flowData = ref<(Node | Edge)[]>([]);
@@ -234,6 +238,7 @@ const flow = useVueFlow(props.runtimeKey);
 const nodeDocument: NodeDocumentContext = { targets: shallowReactive(new Map()), mounts: new Map(), states: shallowReactive(new Map()) };
 const canvasDirty = ref(false);
 const canvasSaveError = ref("");
+const canvasConflict = ref(false);
 const documentObservers = new Set<() => void>();
 onScopeDispose(() => { for (const release of documentObservers) release(); });
 provide("nodeDocument", nodeDocument);
@@ -272,7 +277,8 @@ provide("copyNodeToClipboard", async (node: Parameters<typeof copyNodeToClipboar
 });
 provide("retainNodeFiles", true);
 provide("selectionConnection", shallowRef<NodeConnectionFeedback>());
-if (!authState.value.enabled) {
+const canManageAssets = !authState.value.enabled || authState.value.user?.role === "admin";
+if (canManageAssets) {
   provide("saveNodeToAssets", (label: string, outputs: { label: string; output: NodeOutput }[]) => assetLibraryRef.value?.openSave(label, outputs));
 }
 let canvasController = new AbortController();
@@ -293,6 +299,7 @@ function getCanvasContext() {
 const canvasReady = computed(() => !!canvasId.value && !nodeListLoading.value && nodeLoads.size === 0);
 provide("canvas", getCanvasContext);
 defineExpose({ canvasId, canvasReady, getCanvasContext, addNodeAtPointer, readDocumentNode, saveDocumentNode, mountDocumentNode, observeDocumentNode, prepareCanvasDelete, flushSave: flushCanvasSave, cancelSave: cancelCanvasSave,
+  canvasConflict, canvasDirty, canvasSaveError, refreshSnapshot, captureDraft, draftUnchanged,
   getCanvases: (signal?: AbortSignal) => {
     if (!canvasMenuRef.value) throw new Error("画布菜单尚未就绪");
     return canvasMenuRef.value.getCanvases(signal);
@@ -301,7 +308,9 @@ defineExpose({ canvasId, canvasReady, getCanvasContext, addNodeAtPointer, readDo
   getMentionNodes: () => flow.nodes.value, findMentionNode: flow.findNode,
   getRetainedNodes: canvasHistory.getRetainedNodes,
   get canvasListReady() { return canvasMenuRef.value?.initialized ?? false; },
-  get saveBusy() { return savePaused; }, get loadError() { return canvasMenuRef.value?.loadError ?? ""; },
+  get saveBusy() { return savePaused; },
+  get editVersion() { return saveRevision; },
+  get loadError() { return canvasMenuRef.value?.loadError ?? ""; },
 });
 
 async function prepareCanvasDelete() {
@@ -333,7 +342,7 @@ async function prepareCanvasDelete() {
 type DocumentNodeData = { label?: string; handles?: NodeHandle[]; outputs?: Record<string, NodeOutput | undefined>; textPath?: string };
 
 function checkDocumentDirectory(directory: string) {
-  if (!directory || directory !== project.value?.directory) throw new Error("工作目录已切换，请重新打开节点");
+  if (!directory || directory !== workspaceDirectory || directory !== project.value?.directory) throw new Error("工作目录已切换，请重新打开节点");
 }
 
 function observeDocumentNode(directory: string, canvasPath: string, nodeId: string, onState: (state: NodeDocumentState) => void) {
@@ -342,7 +351,7 @@ function observeDocumentNode(directory: string, canvasPath: string, nodeId: stri
   const stop = watch((): NodeDocumentState => {
     const node = findNode(nodeId);
     const state = nodeDocument.states.get(nodeId);
-    return { dirty: !!node && (canvasDirty.value || !!state?.dirty),
+    return { dirty: !!node && (canvasDirty.value || !!state?.dirty), canvasConflict: canvasConflict.value,
       error: state?.error || canvasSaveError.value || (node && nodeErrors.value[node.type]) || "", deleted: !node };
   }, onState, { immediate: true, flush: "sync" });
   const release = () => { stop(); documentObservers.delete(dispose); };
@@ -394,17 +403,13 @@ function documentHandles(node: Node<DocumentNodeData>) {
   return Object.entries(node.data?.outputs ?? {}).flatMap(([id, output]) => (output?.dataType === "STRING" ? [{ id, label: id }] : []));
 }
 
-async function readDocumentCanvas(directory: string, canvasPath: string, nodeId: string) {
+function readDocumentCanvas(directory: string, canvasPath: string, nodeId: string) {
   checkDocumentDirectory(directory);
+  if (canvasId.value !== canvasPath || binding?.path !== canvasPath) throw new Error("画布已切换，请重新打开节点");
   const files = useWorkspaceFiles(directory);
-  const canvas = await files.readJson<{ toonflowCanvas?: boolean; nodes?: Node<DocumentNodeData>[] }>(canvasPath);
-  checkDocumentDirectory(directory);
-  if (canvas?.toonflowCanvas !== true || !Array.isArray(canvas.nodes)) throw new Error("文件不是有效画布");
-  const node = canvas.nodes.find((item) => item && item.id === nodeId);
+  const node = findNode(nodeId) as Node<DocumentNodeData> | undefined;
   if (!node) throw new Error("节点已删除，请刷新文件树");
   if (node.data !== undefined && (!node.data || typeof node.data !== "object" || Array.isArray(node.data))) throw new Error("节点数据无效");
-  const liveNode = canvasId.value === canvasPath ? findNode(nodeId) : undefined;
-  if (canvasId.value === canvasPath && !liveNode) throw new Error("节点已删除，请刷新文件树");
   const textPath = node.data?.textPath;
   if (
     textPath !== undefined &&
@@ -415,25 +420,24 @@ async function readDocumentCanvas(directory: string, canvasPath: string, nodeId:
       textPath.split(/[\\/]/).includes(".."))
   )
     throw new Error("文本文件路径必须位于工作区内");
-  return { files, canvas, node, liveNode, textPath };
+  return { files, node, textPath };
 }
 
 async function readDocumentNode(directory: string, canvasPath: string, nodeId: string) {
   checkDocumentDirectory(directory);
   await flushCanvasSave();
-  const { files, node, liveNode, textPath } = await readDocumentCanvas(directory, canvasPath, nodeId);
-  const source = liveNode ?? node;
-  const handles = documentHandles(source);
+  const { files, node, textPath } = readDocumentCanvas(directory, canvasPath, nodeId);
+  const handles = documentHandles(node);
   const storedText = textPath === undefined ? undefined : await files.readText(textPath);
   checkDocumentDirectory(directory);
   return {
-    label: typeof source.data?.label === "string" ? source.data.label : nodeId,
+    label: typeof node.data?.label === "string" ? node.data.label : nodeId,
     outputs: handles.map((handle) => {
-      const output = source.data?.outputs?.[handle.id];
+      const output = node.data?.outputs?.[handle.id];
       return {
         id: handle.id,
         label: handle.label || handle.id,
-        text: output?.dataType === "STRING" && typeof output.value === "string" ? output.value : storedText ?? "",
+        text: storedText ?? (output?.dataType === "STRING" && typeof output.value === "string" ? output.value : ""),
       };
     }),
   };
@@ -442,36 +446,30 @@ async function readDocumentNode(directory: string, canvasPath: string, nodeId: s
 async function saveDocumentNode(directory: string, canvasPath: string, nodeId: string, handleId: string, text: string, expectedText?: string) {
   checkDocumentDirectory(directory);
   await flushCanvasSave(async () => {
-    const { files, canvas, node, liveNode, textPath } = await readDocumentCanvas(directory, canvasPath, nodeId);
-    if (!documentHandles(liveNode ?? node).some((handle) => handle.id === handleId)) throw new Error("文本输出已删除，请重新打开节点");
-    if (expectedText !== undefined) {
-      const output = (liveNode ?? node).data?.outputs?.[handleId];
-      const currentText = output?.dataType === "STRING" && typeof output.value === "string" ? output.value : textPath === undefined ? "" : await files.readText(textPath);
-      if (currentText !== expectedText) throw new Error("文档内容已变化，请重新读取后编辑");
-    }
-    if (liveNode?.type === "remote-textNode") {
+    const { files, node, textPath } = readDocumentCanvas(directory, canvasPath, nodeId);
+    if (!documentHandles(node).some(handle => handle.id === handleId)) throw new Error("文本输出已删除，请重新打开节点");
+    const output = node.data?.outputs?.[handleId];
+    const externalText = textPath === undefined ? undefined : await files.readTextSnapshot(textPath);
+    const liveText = output?.dataType === "STRING" ? output.value : undefined;
+    const currentText = externalText?.text ?? (typeof liveText === "string" ? liveText : "");
+    if (expectedText !== undefined && currentText !== expectedText) throw new Error("文档内容已变化，请重新读取后编辑");
+    if (node.type === "remote-textNode" || externalText) await checkCurrentDisk();
+    checkDocumentDirectory(directory);
+    if (canvasId.value !== canvasPath || findNode(nodeId) !== node || node.data?.outputs?.[handleId] !== output
+      || (output?.dataType === "STRING" && output.value !== liveText)) throw new Error("文档内容已变化，请重新读取后编辑");
+    if (node.type === "remote-textNode") {
       await getNodeTools().call({ nodeId, name: "node:setText", args: { text } }, canvasController.signal);
-      checkDocumentDirectory(directory);
-      // 节点工具已同步输出并排队保存；等待期间用户可能继续编辑，不能再写入旧文本快照。
       return;
     }
-    if (liveNode && canvasId.value === canvasPath && findNode(nodeId) === liveNode) {
-      const output = liveNode.data.outputs?.[handleId];
-      if (output?.dataType === "STRING") output.value = text;
-      else if (textPath === undefined) (liveNode.data.outputs ??= {})[handleId] = { dataType: "STRING", value: text };
-    }
-    canvasMenuRef.value?.syncDocumentNode(canvasPath, nodeId, handleId, text, textPath === undefined);
-    if (textPath !== undefined) {
-      await files.write(textPath, text);
-    } else {
-      const data = (node.data ??= {});
-      const output = data.outputs?.[handleId];
-      if (output?.dataType === "STRING") output.value = text;
-      else (data.outputs ??= {})[handleId] = { dataType: "STRING", value: text };
-      await files.writeJson(canvasPath, canvas);
-    }
+    if (textPath !== undefined && externalText) await files.writeTextSnapshot(textPath, text, externalText);
     checkDocumentDirectory(directory);
+    if (canvasId.value !== canvasPath || findNode(nodeId) !== node) throw new Error("画布已切换，请重新打开节点");
+    if (output?.dataType === "STRING") {
+      if (output.value === liveText && node.data?.outputs?.[handleId] === output) output.value = text;
+    } else if (textPath === undefined) ((node.data ??= {}).outputs ??= {})[handleId] = { dataType: "STRING", value: text };
   });
+  // 内联输出只经过画布保存队列，磁盘冲突时仍留在当前草稿。
+  await flushCanvasSave();
 }
 
 function showEdgeDisconnect({ event, edge }: EdgeMouseEvent) {
@@ -557,42 +555,171 @@ let flushing = Promise.resolve();
 let saveError: unknown;
 let savePaused = false;
 let saveCancelled = false;
-let changedWhilePaused = false;
 let saveRevision = 0;
-const saveCanvas = debounce((directory: string, fileName: string) => {
-  const flow = toObject();
+let binding: {
+  directory: string;
+  path: string;
+  disk: Pick<TextSnapshot, "revision" | "encoding">;
+  fields: { toonflowCanvas: true; viewport: ViewportTransform; [key: string]: unknown };
+  content: string;
+} | undefined;
+
+const viewportStorageKey = "toonflow.canvasViewports";
+
+function savedViewports() {
+  try { return new Map<string, ViewportTransform>(JSON.parse(settingsStorage.getItem(viewportStorageKey) ?? "[]")); }
+  catch { return new Map<string, ViewportTransform>(); }
+}
+
+function storeViewport(directory: string, path: string, value: ViewportTransform) {
+  try {
+    const views = savedViewports();
+    const key = JSON.stringify([directory, path]);
+    views.delete(key);
+    views.set(key, value);
+    // ACT: 相机位置仅记录最近 100 张画布。多人模式复用按账号隔离的当前标签存储。
+    settingsStorage.setItem(viewportStorageKey, JSON.stringify([...views].slice(-100)));
+  } catch { /* 浏览器存储不可用时仍可使用当前相机。 */ }
+}
+
+function canvasContent() {
+  const { nodes, edges } = toObject();
+  for (const node of nodes) Reflect.deleteProperty(node, "initialized");
+  for (const edge of edges) {
+    for (const key of ["initialized", "sourceX", "sourceY", "targetX", "targetY"]) Reflect.deleteProperty(edge, key);
+  }
+  return { nodes, edges };
+}
+
+async function applySnapshot(directory: string, path: string, snapshot: CanvasSnapshot, signal?: AbortSignal) {
+  checkDocumentDirectory(directory);
+  binding = undefined;
+  saveCanvas.cancel();
+  const { disk, data: { nodes, edges, ...fields } } = snapshot;
+  // 旧画布可能保存了临时导出进度，重新打开时任务已不存在。
+  for (const node of nodes) if (node.type === "remote-videoNode" && node.data) delete node.data.exportProgress;
+  flow.setNodes(nodes);
+  // 命中宽度由画布统一配置，不使用旧文件中的覆盖值。
+  flow.setEdges(edges.map(({ interactionWidth, ...edge }) => edge));
+  const saved = savedViewports().get(JSON.stringify([directory, path]));
+  await flow.setViewport(saved && [saved.x, saved.y, saved.zoom].every(Number.isFinite) && saved.zoom > 0 ? saved : snapshot.data.viewport);
+  await nextTick();
+  signal?.throwIfAborted();
+  checkDocumentDirectory(directory);
+  binding = { directory, path, disk: { revision: disk.revision, encoding: disk.encoding }, fields, content: JSON.stringify(canvasContent()) };
+  saveRevision++;
+  canvasDirty.value = false;
+  canvasConflict.value = false;
+  canvasSaveError.value = "";
+  saveError = undefined;
+}
+
+function reportSaveError(error: unknown) {
+  canvasSaveError.value = axios.isAxiosError<{ message?: string }>(error)
+    ? error.response?.data?.message || error.message : error instanceof Error ? error.message : "画布保存失败";
+}
+
+function markCanvasConflict(error: unknown) {
+  canvasConflict.value = true;
+  saveError = error;
+  saveCanvas.cancel();
+  reportSaveError(error);
+}
+
+async function checkCurrentDisk() {
+  const loaded = binding;
+  if (!loaded) throw new Error("画布尚未打开");
+  const { directory, path, disk } = loaded;
+  const revision = await useWorkspaceFiles(directory).readTextSnapshot(path).then(value => value.revision, error => {
+    if (axios.isAxiosError(error) && [400, 404].includes(error.response?.status ?? 0)) return undefined;
+    throw error;
+  });
+  checkDocumentDirectory(directory);
+  if (binding !== loaded || loaded.path !== path) throw new Error("画布已切换，请重新打开节点");
+  if (revision !== disk.revision) {
+    const error = new Error("画布已在其他页面更新、移动或删除，请重新载入磁盘版本");
+    markCanvasConflict(error);
+    throw error;
+  }
+}
+
+async function refreshSnapshot(signal: AbortSignal) {
+  const loaded = binding;
+  if (!loaded || canvasDirty.value || canvasConflict.value || savePaused || saveCancelled) return;
+  rememberViewport.flush();
+  const { directory, path } = loaded;
   const revision = saveRevision;
-  // ACT: 同页保存按顺序完成，防止慢请求覆盖后续修改；不处理多个客户端的并发编辑。
+  const latest = await readCanvasSnapshot(useWorkspaceFiles(directory), path, signal);
+  if (binding === loaded && loaded.path === path && draftUnchanged(revision) && !canvasDirty.value && !savePaused
+    && latest.disk.revision !== loaded.disk.revision) return { snapshot: latest, revision };
+}
+
+function draftUnchanged(revision: number) {
+  return !saveCancelled && revision === saveRevision;
+}
+
+async function captureDraft() {
+  const loaded = binding;
+  if (!loaded || !canvasConflict.value || saveCancelled) throw new Error("当前画布没有待解决的冲突");
+  rememberViewport.flush();
+  const revision = saveRevision;
+  const content = canvasContent();
+  const data: CanvasFile = { ...loaded.fields, ...content };
+  for (const node of data.nodes) {
+    const patch = await useNodeEvent(node.id, flow).emit("copy");
+    if (patch) node.data = { ...node.data, ...patch };
+  }
+  if (binding !== loaded || !draftUnchanged(revision)) throw new Error("画布草稿仍在变化，请稍后重试");
+  return { data, revision };
+}
+
+const saveCanvas = debounce(() => {
+  const loaded = binding;
+  if (!loaded || canvasConflict.value || saveCancelled || loaded.directory !== project.value?.directory || loaded.path !== canvasId.value) return;
+  const { directory, path } = loaded;
+  let content: ReturnType<typeof canvasContent>;
+  let signature: string;
+  try {
+    content = canvasContent();
+    signature = JSON.stringify(content);
+  } catch (error) {
+    saveError = error;
+    reportSaveError(error);
+    ElMessage.error(canvasSaveError.value);
+    return;
+  }
+  const revision = saveRevision;
+  // ACT: 排队项固定目录、路径和内容。执行时沿用本页最近一次成功写入的文件版本。
   saving = saving.then(async () => {
+    if (canvasConflict.value || saveCancelled || binding !== loaded || loaded.path !== path || project.value?.directory !== directory) return;
     try {
-      await useWorkspaceFiles(directory).writeJson(fileName, { toonflowCanvas: true, nodes: flow.nodes, edges: flow.edges, viewport: flow.viewport });
+      if (signature !== loaded.content) {
+        const text = `${JSON.stringify({ ...loaded.fields, ...content }, null, 2)}\n`;
+        const nextRevision = await useWorkspaceFiles(directory).writeTextSnapshot(path, text, loaded.disk);
+        loaded.disk.revision = nextRevision;
+        loaded.content = signature;
+      }
       saveError = undefined;
       canvasSaveError.value = "";
       if (revision === saveRevision) canvasDirty.value = false;
-    } catch (err) {
-      saveError = err;
-      canvasSaveError.value = axios.isAxiosError<{ message?: string }>(err) ? err.response?.data.message || err.message : err instanceof Error ? err.message : "画布保存失败";
-      ElMessage.error(
-        axios.isAxiosError<{ message?: string }>(err)
-          ? err.response?.data.message || "画布保存失败"
-          : err instanceof Error
-          ? err.message
-          : "画布保存失败"
-      );
+    } catch (error) {
+      const busy = axios.isAxiosError<{ data?: { code?: string } }>(error)
+        && error.response?.status === 409 && error.response.data?.data?.code === "EBUSY";
+      if (isStaleWorkspaceFile(error) || busy) markCanvasConflict(error);
+      else {
+        saveError = error;
+        reportSaveError(error);
+        ElMessage.error(canvasSaveError.value);
+      }
     }
   });
 }, 500);
 
 function scheduleCanvasSave() {
-  if (saveCancelled) return;
+  if (saveCancelled || !binding || binding.path !== canvasId.value || binding.directory !== project.value?.directory) return;
   canvasDirty.value = true;
   saveRevision++;
-  if (savePaused) {
-    changedWhilePaused = true;
-    return;
-  }
-  const directory = project.value?.directory;
-  if (directory && canvasId.value) saveCanvas(directory, canvasId.value);
+  if (!savePaused && !canvasConflict.value) saveCanvas();
 }
 
 function scheduleCanvasChange() {
@@ -611,8 +738,9 @@ const nodeRuntimeFields = new Set([
   "resizing",
   "dragging",
   "events",
+  "initialized",
 ]);
-const edgeRuntimeFields = new Set(["data", "selected", "sourceNode", "targetNode", "sourceX", "sourceY", "targetX", "targetY", "events"]);
+const edgeRuntimeFields = new Set(["data", "selected", "sourceNode", "targetNode", "sourceX", "sourceY", "targetX", "targetY", "events", "initialized"]);
 // ACT: 仅增删、替换元素时扫描列表；位移与 data 各自监听，单个节点变化不遍历其余节点。
 watch(
   () => [...flow.nodes.value, ...flow.edges.value],
@@ -655,7 +783,10 @@ watch(
   { immediate: true, flush: "post" }
 );
 onScopeDispose(() => elementSaveWatchers.forEach((stop) => stop()));
-watch(() => [viewport.value.x, viewport.value.y, viewport.value.zoom], scheduleCanvasSave, { flush: "post" });
+const rememberViewport = debounce(storeViewport, 300);
+watch(() => [viewport.value.x, viewport.value.y, viewport.value.zoom] as const, ([x, y, zoom]) => {
+  if (binding && binding.path === canvasId.value) rememberViewport(binding.directory, binding.path, { x, y, zoom });
+}, { flush: "post" });
 
 watch(
   [() => project.value?.directory, canvasId],
@@ -663,6 +794,12 @@ watch(
     if (directory !== previousDirectory) {
       workspaceController.abort(new Error("工作区已切换，本轮画布操作已停止"));
       workspaceController = new AbortController();
+    }
+    if (binding && directory === binding.directory && savePaused && fileName && binding.path === previousFileName && fileName !== previousFileName) {
+      rememberViewport.flush();
+      const { x, y, zoom } = viewport.value;
+      storeViewport(binding.directory, fileName, { x, y, zoom });
+      binding.path = fileName;
     }
     edgeDisconnect.value = undefined;
     dragCopy = undefined;
@@ -673,7 +810,7 @@ watch(
       canvasController.abort(new Error("画布已重新加载，本次画布调用已停止"));
       canvasController = new AbortController();
     }
-    if (!savePaused) saveCanvas.flush();
+    if (directory !== previousDirectory || !fileName) saveCanvas.cancel();
   },
   { flush: "sync" }
 );
@@ -690,7 +827,8 @@ watch(() => props.active, (active) => {
 function flushCanvasSave(action?: () => Promise<void>): Promise<void> {
   // ACT: 完整保存及其文件操作串行执行，重命名暂停期间的显式保存也必须等待。
   const next = flushing.then(() => saveCanvasState(action)).then(() => { canvasSaveError.value = ""; }, error => {
-    canvasSaveError.value = axios.isAxiosError<{ message?: string }>(error) ? error.response?.data.message || error.message : error instanceof Error ? error.message : "画布保存失败";
+    reportSaveError(error);
+    if (canvasConflict.value && error === saveError) throw new Error(canvasSaveError.value, { cause: error });
     throw error;
   });
   flushing = next.catch(() => {});
@@ -699,34 +837,29 @@ function flushCanvasSave(action?: () => Promise<void>): Promise<void> {
 
 async function saveCanvasState(action?: () => Promise<void>) {
   if (saveCancelled) throw new Error("画布保存已取消");
-  await Promise.all(flow.getNodes.value.map((node) => useNodeEvent(node.id, flow).emit("save")));
-  await nextTick();
-  if (saveCancelled) throw new Error("画布保存已取消");
-  if (saveError && project.value?.directory && canvasId.value) saveCanvas(project.value.directory, canvasId.value);
+  if (canvasConflict.value) throw saveError;
   if (action) savePaused = true;
   try {
     let revision: number;
     do {
       if (saveCancelled) throw new Error("画布保存已取消");
+      if (canvasConflict.value) throw saveError;
       revision = saveRevision;
-      if (changedWhilePaused && project.value?.directory && canvasId.value) {
-        saveCanvas(project.value.directory, canvasId.value);
-        changedWhilePaused = false;
-      }
-      saveCanvas.flush();
-      await saving;
-      if (saveError) throw saveError;
       // 画布写入期间节点可能完成生成，等新增落盘后重新保存变化。
       await Promise.all(flow.getNodes.value.map((node) => useNodeEvent(node.id, flow).emit("save")));
       await nextTick();
+      if (canvasConflict.value) throw saveError;
+      if (canvasDirty.value) saveCanvas();
+      saveCanvas.flush();
+      await saving;
+      if (saveError) throw saveError;
     } while (revision !== saveRevision);
     if (saveCancelled) throw new Error("画布保存已取消");
     await action?.();
   } finally {
     if (action && !saveCancelled) {
       savePaused = false;
-      if (changedWhilePaused && project.value?.directory && canvasId.value) saveCanvas(project.value.directory, canvasId.value);
-      changedWhilePaused = false;
+      if (canvasDirty.value && !canvasConflict.value) saveCanvas();
     }
   }
 }
@@ -734,7 +867,6 @@ async function saveCanvasState(action?: () => Promise<void>) {
 function cancelCanvasSave() {
   saveCancelled = true;
   savePaused = true;
-  changedWhilePaused = false;
   saveCanvas.cancel();
 }
 function canUseCanvasClipboard(event: Event) {
@@ -974,6 +1106,11 @@ function updateCanvasKeys(event: KeyboardEvent) {
     shortcutMatches(event, shortcuts[action])
   );
   if (!action) {
+    if (event.code === "KeyS" && (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && canvasId.value) {
+      event.preventDefault();
+      if (!event.repeat) void flushCanvasSave().catch(() => {});
+      return;
+    }
     const nativeClipboardKey = (event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey
       && (event.code === "KeyV" || event.code === "KeyC" && flow.getSelectedNodes.value.length && !window.getSelection()?.toString());
     if (panKeyPressed.value || nativeClipboardKey) event.preventDefault();
@@ -1052,6 +1189,7 @@ onBeforeUnmount(() => {
   workspaceController.abort(new Error("工作区已关闭"));
   canvasController.abort(new Error("画布已关闭"));
   saveCanvas.flush();
+  rememberViewport.flush();
   loadRequest++;
 });
 
@@ -1062,14 +1200,12 @@ const nodeWindow = window as typeof window & {
 nodeWindow.toonflowNodeHost = { vue: vueRuntime, vueFlow: vueFlowRuntime, elementPlus: elementPlusRuntime, three: threeRuntime, ai: { runAgentLoop, createAssistantMessageEventStream } };
 provide("nodeConfig", (nodeType: string) => nodeConfigs.value[nodeType] ?? {});
 provide("workspaceFiles", () => {
-  const directory = project.value?.directory;
-  if (!directory) throw new Error("请先选择工作目录");
-  return useWorkspaceFiles(directory);
+  if (!workspaceDirectory || project.value?.directory !== workspaceDirectory) throw new Error("当前工作区已关闭");
+  return useWorkspaceFiles(workspaceDirectory);
 });
 provide("workspaceDirectory", () => {
-  const directory = project.value?.directory;
-  if (!directory) throw new Error("请先选择工作目录");
-  return directory;
+  if (!workspaceDirectory || project.value?.directory !== workspaceDirectory) throw new Error("当前工作区已关闭");
+  return workspaceDirectory;
 });
 provide("reloadRemoteNode", (type: string) => {
   const name = type.replace(/^remote-/, "");

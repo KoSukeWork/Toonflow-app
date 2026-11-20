@@ -10,8 +10,9 @@ const inputSchema = z.strictObject({
   values: z.record(z.string().max(64), z.union([z.string().max(8000), z.number(), z.boolean(), z.null(), z.array(z.string().max(300)).max(20)])).optional(),
 });
 
-export default Router().post("/", validateFields(inputSchema.shape), (req, res) => {
+export default Router().post("/", validateFields(inputSchema.shape), async (req, res) => {
   u.mcpControl.assertAppRequest(req);
   const { sessionId, callId, ...response } = inputSchema.parse(req.body);
+  await u.singleAgent.authorizeSessionRequest(req, sessionId);
   res.json(success(u.singleAgent.answer(sessionId, callId, response)));
 });

@@ -2,7 +2,7 @@
   <el-card v-if="visible" class="assetLibrary" shadow="never" :bodyStyle="{ padding: '8px' }" role="region" aria-label="素材库" @dblclick.stop>
     <div class="libraryToolbar">
       <el-input v-model="searchQuery" class="searchInput" :prefixIcon="IconSearch" placeholder="搜索素材" aria-label="搜索素材" clearable @keydown.esc.stop="searchQuery = ''" />
-      <el-button class="toolbarButton" text :icon="IconFolderPlus" title="新建文件夹" aria-label="新建文件夹" :disabled="newFolderParent !== undefined" @click="startFolder" />
+      <el-button v-if="canManage" class="toolbarButton" text :icon="IconFolderPlus" title="新建文件夹" aria-label="新建文件夹" :disabled="newFolderParent !== undefined" @click="startFolder" />
       <el-button class="toolbarButton" text :icon="IconX" title="关闭素材库" aria-label="关闭素材库" @click="visible = false" />
     </div>
     <el-scrollbar class="libraryScroll" maxHeight="min(440px, calc(100dvh - 198px))">
@@ -21,7 +21,7 @@
             <el-input v-if="data.draft" ref="folderInput" v-model="newFolderName" class="folderNameInput" size="small" aria-label="文件夹名称" :disabled="folderSaving" @click.stop @keydown.stop @keydown.enter.prevent="saveFolder" @keydown.esc.prevent="cancelFolder" @blur="saveFolder" />
             <span v-else class="assetName">{{ data.name }}</span>
             <el-button v-if="mediaKind(data)" class="moreButton" text :icon="IconEye" :aria-label="'预览 ' + data.name" title="预览（也可双击素材）" @click.stop="openPreview(data)" />
-            <el-button v-if="!data.draft" class="moreButton" text :icon="IconDots" :aria-label="'更多 ' + data.name" title="更多" @click.stop="openItemMenu($event, data)" />
+            <el-button v-if="!data.draft && (canManage || data.type === 'file')" class="moreButton" text :icon="IconDots" :aria-label="'更多 ' + data.name" title="更多" @click.stop="openItemMenu($event, data)" />
           </div>
         </template>
       </el-tree>
@@ -36,7 +36,7 @@
     </div>
   </el-card>
 
-  <assetMenu v-if="visible" ref="assetMenuRef" :entries="entries" @changed="refreshAssets" />
+  <assetMenu v-if="visible" ref="assetMenuRef" :canManage="canManage" :entries="entries" @changed="refreshAssets" />
 
   <el-image-viewer v-if="previewAsset?.kind === 'image'" :urlList="[previewAsset.url]" teleported @close="previewAsset = undefined" />
 
@@ -97,7 +97,7 @@ import assetMenu from "./assetMenu.vue";
 type AssetEntry = { name: string; path: string; type: "file" | "directory"; children?: AssetEntry[]; draft?: boolean };
 type AssetOutput = { label: string; output: NodeOutput };
 
-const props = defineProps<{ directory?: string }>();
+const props = defineProps<{ directory?: string; canManage: boolean }>();
 const visible = defineModel<boolean>({ default: false });
 const saveVisible = ref(false);
 const saving = ref(false);
@@ -140,7 +140,7 @@ function openPreview(entry: AssetEntry) {
 }
 
 function openItemMenu(event: MouseEvent, entry: AssetEntry) {
-  if (entry.draft) return;
+  if (entry.draft || (!props.canManage && entry.type === "directory")) return;
   event.preventDefault();
   event.stopPropagation();
   assetMenuRef.value?.openMenu(event, entry);

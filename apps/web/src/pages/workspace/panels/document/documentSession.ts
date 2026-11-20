@@ -1,13 +1,13 @@
 import { markRaw, ref, shallowReactive, type Component } from "vue";
 import axios from "axios";
 import type { ExtContext, ExtDefinition, ExtResource } from "@toonflow/ext-scaffold/runtime";
-import useWorkspaceFiles, { type TextSnapshot } from "@/lib/workspaceFiles";
+import type { NodeDocumentState } from "@toonflow/nodes-scaffold/nodeDocument";
+import useWorkspaceFiles, { isStaleWorkspaceFile, type TextSnapshot } from "@/lib/workspaceFiles";
 import { writeClipboardText } from "@/lib/clipboard";
 import { extensionConfig, saveExtensionConfig } from "./extensions";
 import { t } from "@toonflow/i18n/vue";
 
-type NodeState = { dirty: boolean; error: string; deleted: boolean };
-type NodeObserver = (onState: (state: NodeState) => void) => Promise<{ release(): void; flushSave(): Promise<void> }>;
+type NodeObserver = (onState: (state: NodeDocumentState) => void) => Promise<{ release(): void; flushSave(): Promise<void> }>;
 export function documentError(error: unknown) {
   return axios.isAxiosError(error) ? error.response?.data?.message || error.message : error instanceof Error ? error.message : t`文档操作失败`;
 }
@@ -79,7 +79,7 @@ export function createDocumentSession(resource: ExtResource, extension: ExtDefin
         }).catch(error => {
           if (queuedRevision === currentRevision) queuedRevision = -1;
           context.error = documentError(error);
-          session.conflict = axios.isAxiosError(error) && error.response?.status === 409 && error.response?.data?.data?.code === "ESTALE";
+          session.conflict = isStaleWorkspaceFile(error);
           throw error;
         });
       }
@@ -123,6 +123,7 @@ export function createDocumentSession(resource: ExtResource, extension: ExtDefin
             if (disposed || controller.signal.aborted) return;
             context.dirty = state.dirty;
             context.error = state.error;
+            session.conflict = state.canvasConflict === true;
             if (state.deleted) onDeleted?.();
           });
           if (disposed || controller.signal.aborted) { lease.release(); return; }

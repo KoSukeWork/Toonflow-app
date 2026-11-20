@@ -3,11 +3,10 @@ import { parseSessionEntries } from "@earendil-works/pi-coding-agent";
 import type { CanvasContext } from "@toonflow/tools-scaffold/runtime";
 import type { AgentEvent } from "@/agent/runtime/types";
 import { run } from "@/agent/runtime";
-import { createAgentConversation, getToolResultText, trackAgentEvent, updateSubAgent } from "@/agent/runtime/sessions";
+import { createAgentConversation, getToolResultText, trackAgentEvent, resolveSessionPath, updateSubAgent } from "@/agent/runtime/sessions";
 import { addUsage, emptyUsage, type SubAgentResult } from "@/agent/runtime/subAgent";
 import { createCanvasContext } from "@/agent/bridge/canvas";
 import { createQuestionContext } from "@/agent/bridge/question";
-import { resolveWorkspacePath } from "@/utils/workspace/files";
 import { translateError, translateMessage } from "@/lib/i18n";
 
 export async function runDelegatedAgent(options: {
@@ -42,7 +41,7 @@ export async function runDelegatedAgent(options: {
     questions.dispose();
     send({ type: "done" });
   }
-  const { path } = await resolveWorkspacePath(cwd, `.agent/sessions/${child.file}`);
+  const { path } = await resolveSessionPath(cwd, child.file);
   const entries = parseSessionEntries(await readFile(path, "utf8"));
   const usage = emptyUsage();
   for (const entry of entries) {

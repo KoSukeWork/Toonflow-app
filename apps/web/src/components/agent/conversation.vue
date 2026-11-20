@@ -181,6 +181,7 @@ import { mentionName, mentionParts, mentionPlainText, mentionThumbnailProps } fr
 import toolMessage from "./toolMessage.vue";
 import attachmentList from "./attachmentList.vue";
 import { createPastedTextFile, readTextAttachment } from "./textAttachments";
+import { apiIdentityHeaders } from "@/lib/auth";
 import useWorkspaceFiles from "@/lib/workspaceFiles";
 import { writeClipboardText } from "@/lib/clipboard";
 import anonymousData from "@/lib/anonymousData";
@@ -605,7 +606,7 @@ async function sendCanvasResult(event: Extract<AgentEvent, { type: "canvasCall" 
   if (cancelled) body = JSON.stringify({ directory, callId: event.callId, error: translate("画布操作已取消") });
   const response = await fetch("/api/agent/canvasResult", {
     method: "POST",
-    headers: { "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+    headers: { ...apiIdentityHeaders(), "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
     body,
     keepalive: cancelled,
     signal: cancelled ? AbortSignal.timeout(5000) : signal,
@@ -663,7 +664,7 @@ async function sendMessage(source?: AgentMessage) {
     await uploadAttachments(attachments, directory, requestController.signal);
     const response = await fetch("/api/agent", {
       method: "POST",
-      headers: { "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+      headers: { ...apiIdentityHeaders(), "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
       body: JSON.stringify({ prompt, mentions, attachments: attachments.map(({ name, path, mimeType }) => ({ name, path, mimeType })), directory, providerId: model.providerId, modelId: model.modelId, thinkingLevel: reasoningEffort.value || undefined, sessionFile: props.sessionFile, resendFrom, canvas: canvasContext ? { id: canvasContext.id, tools: canvasContext.tools } : undefined }),
       signal: requestController.signal,
     });
@@ -734,7 +735,7 @@ async function sendMessage(source?: AgentMessage) {
     // ACT: Bun 的流断开事件可能不触发；主动结束仍在等待的提问，不依赖断开通知。
     for (const callId of pendingQuestions.values()) {
       void fetch("/api/agent/answer", {
-        method: "POST", headers: { "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
+        method: "POST", headers: { ...apiIdentityHeaders(), "Accept-Language": locale.value, "Content-Type": "application/json", "x-toonflow-workspace": "1" },
         body: JSON.stringify({ directory, callId, cancelled: true }), keepalive: true,
       }).catch(() => {});
     }

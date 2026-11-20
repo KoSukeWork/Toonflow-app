@@ -54,7 +54,7 @@ export const useWorkspaceStore = defineStore("workspace", () => {
   }
 
   function activateRegisteredProject(value: RegisteredProject) {
-    pendingAgentMessage.value = null;
+    if (pendingAgentMessage.value?.directory !== value.directory) pendingAgentMessage.value = null;
     project.value = value;
     projectList.value = [value, ...projectList.value.filter(item => item.id !== value.id)];
   }

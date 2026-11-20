@@ -20,9 +20,10 @@ import { createReportTool } from "@/agent/tools/report";
 import { runDelegatedAgent } from "@/agent/runtime/delegation";
 import {
   agentAttachmentsSchema, getActiveAgentSession, getAgentStats, getParentSessionFile, getSubAgentInfo,
-  getToolResultText, hasPendingAgentQuestion, registerAgentSession, updateSubAgent,
+  getToolResultText, hasPendingAgentQuestion, registerAgentSession, resolveSessionPath, updateSubAgent,
   type ActiveAgentSession,
 } from "@/agent/runtime/sessions";
+import { isMultiUserEnabled } from "@/utils/auth";
 import { isMemoryEnabled } from "@/utils/personalization";
 import { lockWorkspaceFiles, resolveWorkspacePath } from "@/utils/workspace/files";
 import { t } from "@/lib/i18n";
@@ -83,7 +84,7 @@ export async function run(
   }
   if (resendFrom && !sessionFile) throw Object.assign(new Error("重发需要指定原对话"), { status: 400 });
   signal?.throwIfAborted();
-  const { path: sessionsDir } = await resolveWorkspacePath(cwd, ".agent/sessions", true);
+  const { path: sessionsDir } = await resolveSessionPath(cwd);
   const sessionPath = sessionFile ? (await resolveWorkspacePath(sessionsDir, sessionFile)).path : undefined;
   const active = sessionPath ? getActiveAgentSession(sessionPath) : undefined;
   if (active && hasPendingAgentQuestion(active)) {
@@ -147,7 +148,7 @@ export async function run(
       if (tools.some(tool => tool.name === "report")) throw new Error("工具名称 report 已被内置上报工具占用");
       tools.push(createReportTool(cwd, parentFile, file, child.name, send));
     }
-    tools.push(await createSubAgentTool({
+    if (!isMultiUserEnabled()) tools.push(await createSubAgentTool({
       cwd, tools, canvas, modelRuntime: runtime, model: runtime.getModel(providerId, modelId), thinkingLevel,
       runTask: (name, task, taskSignal, onProgress) => runDelegatedAgent({
         cwd, parentFile: file, name, task, providerId, modelId, thinkingLevel, canvas, signal: taskSignal, send, onProgress,

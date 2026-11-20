@@ -29,6 +29,11 @@ export async function loadAuthState() {
   });
 }
 
+export function apiIdentityHeaders(): Record<string, string> {
+  const user = authState.value.user;
+  return user ? { "x-toonflow-user": user.id } : {};
+}
+
 export function registerApiIdentity(client: AxiosInstance) {
   const requests = client.interceptors.request.use(config => {
     const user = authState.value.user;

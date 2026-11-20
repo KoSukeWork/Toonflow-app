@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { CanvasContext, QuestionContext, ToolContext, ToolFiles } from "@toonflow/tools-scaffold/runtime";
 import conf from "@/utils/conf";
+import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
 import { isWithin, resolveWorkspacePath, writeWorkspaceFile, renameWorkspaceFile, lockWorkspaceFiles, protectWorkspaceRoot } from "@/utils/workspace/files";
 import { listTools, loadTool, validateToolConfig } from "@/utils/plugins/tools";
 import { createSkillContext } from "@/agent/skills";
@@ -19,6 +20,14 @@ import { readDocument } from "@/utils/documents";
 
 export function createAgentToolContext(cwd: string, config: Record<string, unknown> = {}, canvas?: CanvasContext, question?: QuestionContext, workspaceAvailable = true): ToolContext {
   const skillsDirectory = join(dirname(conf.path), "skills");
+  const generate = async (type: "image" | "video" | "audio", request: Parameters<typeof generateMedia>[2], signal?: AbortSignal) => {
+    try { return await generateMedia(cwd, type, request, signal); }
+    catch (error) {
+      signal?.throwIfAborted();
+      if (isMultiUserEnabled()) throw new Error("媒体生成失败，请联系管理员检查供应商配置");
+      throw error;
+    }
+  };
   const requireWorkspace = () => { if (!workspaceAvailable) throw new Error("此对话未提供工作目录，无法使用文件或媒体操作"); };
   const resolvePath = async (path: string, readOnly = false) => {
     requireWorkspace();
@@ -77,9 +86,9 @@ export function createAgentToolContext(cwd: string, config: Record<string, unkno
     ffmpeg: signal => { requireWorkspace(); return createWorkspaceFfmpeg(cwd, signal); },
     media: workspaceAvailable ? {
       listModels: listMediaModels,
-      generateImage: (request, signal) => generateMedia(cwd, "image", request, signal),
-      generateVideo: (request, signal) => generateMedia(cwd, "video", request, signal),
-      generateAudio: (request, signal) => generateMedia(cwd, "audio", request, signal),
+      generateImage: (request, signal) => generate("image", request, signal),
+      generateVideo: (request, signal) => generate("video", request, signal),
+      generateAudio: (request, signal) => generate("audio", request, signal),
     } : undefined,
     sdk: {
       defineTool, createWriteToolDefinition, createEditToolDefinition, createLsToolDefinition,
@@ -100,15 +109,28 @@ export function createAgentToolContext(cwd: string, config: Record<string, unkno
   };
 }
 
+const projectTools = new Set(["workspace", "askUser", "canvas", "assetOperator", "mediaGeneration"]);
+
+export function availableAgentTool(name: string) {
+  return !isMultiUserEnabled() || projectTools.has(name);
+}
+
+export function agentToolConfig(name: string, config: Record<string, unknown>) {
+  if (isMultiUserEnabled() && (name === "workspace" || (name === "assetOperator" && getCurrentUser()?.role !== "admin"))) {
+    return { ...config, readOnly: true };
+  }
+  return config;
+}
+
 export async function createAgentTools(cwd: string, canvas?: CanvasContext, question?: QuestionContext): Promise<ToolDefinition[]> {
   const tools: ToolDefinition[] = [];
   const names = new Set<string>();
   const context = createAgentToolContext(cwd, {}, canvas, question);
   for (const item of await listTools()) {
-    if (!item.enabled) continue;
+    if (!item.enabled || !availableAgentTool(item.name)) continue;
     if (item.loadError) throw new Error(`${item.displayName}：${item.loadError}`);
     const { plugin, metadata } = await loadTool(item.name);
-    const config = validateToolConfig(plugin, item.config);
+    const config = validateToolConfig(plugin, agentToolConfig(item.name, item.config));
     const definitions = await plugin.createTools({ ...context, config });
     for (const tool of definitions) {
       if (!tool.name || typeof tool.execute !== "function") throw new Error(t`${item.displayName} 返回了无效的工具`);

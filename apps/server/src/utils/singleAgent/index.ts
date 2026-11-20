@@ -4,7 +4,11 @@ import { t } from "@/lib/i18n";
 import { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { AgentSession, CreateAgentSessionOptions, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { QuestionContext } from "@toonflow/tools-scaffold/runtime";
-import { createAgentToolContext } from "@/agent/tools";
+import type { Request } from "express";
+import { getCurrentUser, requireRequestUser } from "@/utils/auth";
+import { resolveProjectDirectory } from "@/utils/projects";
+import { agentResourcePaths } from "@/agent/runtime/resources";
+import { agentToolConfig, availableAgentTool, createAgentToolContext } from "@/agent/tools";
 import { createAgentModel } from "@/agent/runtime/model";
 import { configureAgentRequests } from "@/agent/runtime/requests";
 import { getToolResultText } from "@/agent/runtime/sessions";
@@ -34,6 +38,8 @@ type RunState = {
 };
 type SingleSession = {
   id: string;
+  userId?: string;
+  idleTimer?: ReturnType<typeof setTimeout>;
   cwd: string;
   workspaceAvailable: boolean;
   history: SessionManager;
@@ -51,6 +57,19 @@ function getSession(sessionId: string) {
   const session = sessions.get(sessionId);
   if (!session || session.closed) throw Object.assign(new Error("临时对话不存在或已关闭"), { status: 404 });
   return session;
+}
+
+export async function authorizeSessionRequest(req: Request, id: string, closing = false) {
+  if (!req.app.locals.accounts) return;
+  const session = getSession(id);
+  if (session.userId !== requireRequestUser(req).id) throw Object.assign(new Error("临时对话不存在或已关闭"), { status: 404 });
+  if (!closing && session.workspaceAvailable) await resolveProjectDirectory(req, session.cwd);
+}
+
+function expireIdleSession(session: SingleSession) {
+  if (session.userId && !session.closed) session.idleTimer = setTimeout(() => {
+    void close(session.id).catch(error => console.error("清理空闲临时对话失败", error));
+  }, 60 * 60 * 1000);
 }
 
 function setStatus(active: RunState, status: SingleAgentStatus) {
@@ -111,13 +130,17 @@ export async function create(options: {
   signal?.throwIfAborted();
   const id = crypto.randomUUID();
   const cwd = options.directory ?? join(dirname(conf.path), "singleAgent", id);
-  if (!options.directory) await mkdir(cwd, { recursive: true });
+  const userId = getCurrentUser()?.id;
+  if (userId && [...sessions.values()].filter(item => item.userId === userId).length >= 32) {
+    throw Object.assign(new Error("打开的临时对话过多，请先关闭已有对话"), { status: 429 });
+  }
   const session: SingleSession = {
-    id, cwd, workspaceAvailable: !!options.directory, history: SessionManager.inMemory(cwd),
+    id, userId, cwd, workspaceAvailable: !!options.directory, history: SessionManager.inMemory(cwd),
     systemPrompt: options.systemPrompt ?? "", tools: [], closed: false,
   };
   sessions.set(id, session);
   try {
+    if (!options.directory) await mkdir(cwd, { recursive: true });
     const question: QuestionContext = { ask: (...args) => {
       const active = session.active;
       if (!active?.questions) throw new Error("临时对话未在运行");
@@ -133,10 +156,11 @@ export async function create(options: {
       else {
         const pluginName = typeof reference === "string" ? reference : reference.plugin;
         const info = available.get(pluginName);
+        if (!availableAgentTool(pluginName)) throw Object.assign(new Error("当前模式无法使用此工具"), { status: 403 });
         if (!info?.enabled) throw Object.assign(new Error(t`工具插件 ${pluginName} 未安装或未启用`), { status: 400 });
         if (info.loadError) throw new Error(info.loadError);
         const { plugin, metadata } = await loadTool(pluginName);
-        definitions = await plugin.createTools({ ...context, config: validateToolConfig(plugin, info.config) });
+        definitions = await plugin.createTools({ ...context, config: validateToolConfig(plugin, agentToolConfig(pluginName, info.config)) });
         const selected = typeof reference === "string" ? undefined : reference.names;
         if (selected?.some(name => !definitions.some(tool => tool.name === name))) throw Object.assign(new Error(t`插件 ${pluginName} 未提供所选工具`), { status: 400 });
         definitions = definitions.filter(tool => !selected || selected.includes(tool.name)).map(tool => ({
@@ -151,6 +175,7 @@ export async function create(options: {
       }
     }
     signal?.throwIfAborted();
+    expireIdleSession(session);
     return { sessionId: id };
   } catch (error) {
     await close(id);
@@ -172,6 +197,7 @@ export async function run(options: {
     id: options.runId, controller: new AbortController(), status: "idle", pauseRequested: false, activeActions: 0,
     finished: Promise.withResolvers<void>(), send, questionIds: new Set(), clientCalls: new Map(),
   };
+  clearTimeout(state.idleTimer);
   state.active = active;
   const abort = () => { active.controller.abort(signal?.reason); };
   signal?.addEventListener("abort", abort, { once: true });
@@ -207,17 +233,17 @@ export async function run(options: {
     const { runtime } = await createAgentModel(options.providerId, options.modelId, thinkingLevel);
     active.controller.signal.throwIfAborted();
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
-    const agentDir = join(state.cwd, ".agent");
+    const paths = agentResourcePaths(state.cwd);
     const systemPrompt = [...new Set([state.systemPrompt || "请根据用户要求完成当前任务，按需使用提供的工具。", ...tools.flatMap(tool => tool.promptGuidelines ?? [])])].filter(Boolean).join("\n\n");
     const resourceLoader = new DefaultResourceLoader({
-      cwd: state.cwd, agentDir, settingsManager,
+      ...paths, settingsManager,
       noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
       systemPrompt: "", systemPromptOverride: () => systemPrompt, appendSystemPrompt: [],
     });
     await resourceLoader.reload();
     active.controller.signal.throwIfAborted();
     const { session } = await createAgentSession({
-      cwd: state.cwd, agentDir, modelRuntime: runtime, model: runtime.getModel(options.providerId, options.modelId),
+      cwd: state.cwd, agentDir: paths.agentDir, modelRuntime: runtime, model: runtime.getModel(options.providerId, options.modelId),
       thinkingLevel, sessionManager: state.history, settingsManager, resourceLoader,
       tools: tools.map(tool => tool.name), customTools: tools,
     });
@@ -298,6 +324,7 @@ export async function run(options: {
       }
     } finally {
       state.active = undefined;
+      expireIdleSession(state);
       try { setStatus(active, "idle"); send({ type: "done" }); }
       finally { active.finished.resolve(); }
     }
@@ -357,6 +384,7 @@ export async function close(sessionId: string) {
   const session = sessions.get(sessionId);
   if (!session) return;
   if (session.closing) return session.closing;
+  clearTimeout(session.idleTimer);
   session.closed = true;
   const active = session.active;
   active?.controller.abort(new Error("临时对话已关闭"));

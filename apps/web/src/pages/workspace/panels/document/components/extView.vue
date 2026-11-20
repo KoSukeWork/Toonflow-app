@@ -3,9 +3,9 @@
     <div v-if="context.error || runtimeError" class="extError" role="alert">
       <span>{{ context.error || runtimeError }}</span>
       <span class="errorActions">
-        <el-button v-if="session.conflict" text size="small" @click="reloadDisk">载入磁盘版本</el-button>
-        <el-button v-if="context.dirty && session.extension.text" text size="small" @click="saveCopy">另存副本</el-button>
-        <el-button v-if="runtimeError || context.dirty || !session.component" text size="small" @click="retry">重试</el-button>
+        <el-button v-if="session.conflict && !canvasConflict" text size="small" @click="reloadDisk">载入磁盘版本</el-button>
+        <el-button v-if="context.dirty && session.extension.text && !canvasConflict" text size="small" @click="saveCopy">另存副本</el-button>
+        <el-button v-if="!canvasConflict && (runtimeError || context.dirty || !session.component)" text size="small" @click="retry">重试</el-button>
       </span>
     </div>
     <div v-if="session.extensionChanged" class="extensionNotice" role="status">扩展已更新，关闭该扩展的所有标签后重新打开，以应用新版本。</div>
@@ -36,8 +36,11 @@ const context = computed(() => new Proxy(session.value.context, {
   },
 }));
 const runtimeError = ref("");
+const canvasConflict = computed(() => session.value.conflict && context.value.resource.kind === "canvasNode");
 onErrorCaptured(error => { runtimeError.value = error instanceof Error ? error.message : String(error); return false; });
-function save() { void context.value.flushSave().catch(() => {}); }
+function save() {
+  if (!canvasConflict.value) void context.value.flushSave().catch(() => {});
+}
 function retry() {
   if (runtimeError.value) { runtimeError.value = ""; return; }
   if (context.value.dirty) save();

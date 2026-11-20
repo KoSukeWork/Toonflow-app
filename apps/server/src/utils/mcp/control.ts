@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { z } from "zod";
 import conf from "@/utils/conf";
 import { isMobileLinkRequest } from "@/utils/mobileLink";
+import { getRequestUser } from "@/utils/auth";
 import { getRuntimePlatform } from "@/lib/platform";
 
 export const controlStateSchema = z.object({
@@ -32,7 +33,7 @@ export function getMcpSettings() {
 }
 
 function allowedHost(req: Request) {
-  return isMobileLinkRequest(req) || !getRuntimePlatform().requiresLocalHost || ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname);
+  return !!getRequestUser(req) || isMobileLinkRequest(req) || !getRuntimePlatform().requiresLocalHost || ["localhost", "127.0.0.1", "[::1]"].includes(req.hostname);
 }
 
 export function getAppOrigin(req: Request) {

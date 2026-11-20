@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { Router } from "express";
 import { z } from "zod";
 import u from "@/utils";
+import { availableAgentTool } from "@/agent/tools";
 import { validateFields } from "@/lib/middleware";
 import { error } from "@/lib/responseFormat";
 
@@ -11,6 +12,7 @@ export default Router().get("/", validateFields({
   version: z.string().regex(/^[a-f0-9]{64}$/),
 }, "query"), async (req, res) => {
   const { name, version } = req.query as { name: string; version: string };
+  if (!availableAgentTool(name)) return res.status(404).json(error("工具不可用", null, 404));
   const disabled = await lstat(resolve(u.plugins.toolsDirectory, `${name}.disabled`)).catch((err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") return null;
     throw err;

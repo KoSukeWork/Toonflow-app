@@ -4,6 +4,7 @@ import { basename, dirname, join, relative, sep } from "node:path";
 import { loadSkills, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { SkillContext, SkillLocation, SkillScope } from "@toonflow/tools-scaffold/runtime";
 import conf from "@/utils/conf";
+import { isMultiUserEnabled } from "@/utils/auth";
 import { directory, isEnabled } from "@/utils/skills/files";
 import { isWithin, lockWorkspaceFiles, resolveWorkspacePath, writeWorkspaceFile } from "@/utils/workspace/files";
 
@@ -15,7 +16,7 @@ export function loadAgentSkills(cwd: string, scope?: SkillScope) {
     includeDefaults: false,
     // 同名技能由工作区优先，列表与运行时共用 SDK 的扫描规则。
     skillPaths: [
-      ...(scope !== "global" ? [join(cwd, "skill")] : []),
+      ...(!isMultiUserEnabled() && scope !== "global" ? [join(cwd, "skill")] : []),
       ...(scope !== "workspace" ? [join(dirname(conf.path), "skills")] : []),
     ].filter(existsSync),
   });

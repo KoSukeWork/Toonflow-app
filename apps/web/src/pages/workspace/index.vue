@@ -35,6 +35,15 @@
           </span>
         </template>
       </el-segmented>
+      <div v-if="canvasPanelRef?.conflicts.length" class="canvasConflicts" aria-label="画布保存冲突">
+        <el-alert v-for="conflict in canvasPanelRef.conflicts" :key="conflict.key" type="warning" showIcon :closable="false" :title="`画布保存冲突 · ${conflict.path}`">
+          <div>{{ conflict.message }}</div>
+          <div class="conflictActions">
+            <el-button size="small" type="primary" :loading="recoveringCanvas?.key === conflict.key && recoveringCanvas.action === 'copy'" :disabled="!!recoveringCanvas" @click="resolveCanvasConflict(conflict.key, 'copy')">另存副本</el-button>
+            <el-button size="small" :loading="recoveringCanvas?.key === conflict.key && recoveringCanvas.action === 'reload'" :disabled="!!recoveringCanvas" @click="resolveCanvasConflict(conflict.key, 'reload')">重新载入磁盘版本</el-button>
+          </div>
+        </el-alert>
+      </div>
       <div class="bottomTools">
         <el-card v-if="activePanel === 'canvas'" class="toolMenu" shadow="never" :bodyStyle="{ padding: '3px 6px' }">
           <div class="toolMenuContent" role="toolbar" aria-label="画布工具">
@@ -94,7 +103,7 @@
             </el-tooltip>
           </div>
         </el-card>
-        <el-tooltip v-if="!authState.enabled && !agentVisible" content="Toonflow Agent" placement="top" :showArrow="false" :hideAfter="0">
+        <el-tooltip v-if="!agentVisible" content="Toonflow Agent" placement="top" :showArrow="false" :hideAfter="0">
           <el-button
             class="agentButton"
             :class="{ standalone: activePanel !== 'canvas' }"
@@ -105,7 +114,7 @@
         </el-tooltip>
       </div>
     </div>
-    <floatingAgent v-if="!authState.enabled" v-model="agentVisible" @resize="agentWidth = $event" />
+    <floatingAgent v-model="agentVisible" @resize="agentWidth = $event" />
     <settings v-model="settingsVisible" />
     <el-dialog v-model="contactVisible" :title="contactInfo.title" width="min(360px, calc(100vw - 32px))" alignCenter appendToBody>
       <div class="contactContent">
@@ -139,6 +148,7 @@ import anonymousData from "@/lib/anonymousData";
 import { useProviderBalances } from "@/lib/providerBilling";
 import canvasPanel from "./panels/canvas/canvasHost.vue";
 import type { DocumentNodeOptions } from "./panels/canvas/canvasFiles";
+import type { NodeDocumentState } from "@toonflow/nodes-scaffold/nodeDocument";
 import workspaceMenu from "./components/workspaceMenu.vue";
 import floatingAgent from "./components/floatingAgent.vue";
 
@@ -153,7 +163,7 @@ const panelOptions = [
   { label: "画布", value: "canvas", icon: IconVector },
   { label: "文档", value: "document", icon: IconFileText },
 ];
-const agentVisible = ref(!authState.value.enabled);
+const agentVisible = ref(!authState.value.enabled || !!workspaceStore.pendingAgentMessage);
 const agentWidth = ref(0);
 const settingsVisible = ref(false);
 const helpVisible = ref(false);
@@ -179,6 +189,25 @@ function showContact(type: "community" | "business") {
   contactVisible.value = true;
 }
 const canvasPanelRef = ref<InstanceType<typeof canvasPanel>>();
+const recoveringCanvas = ref<{ key: string; action: "copy" | "reload" }>();
+
+async function resolveCanvasConflict(key: string, action: "copy" | "reload") {
+  const panel = canvasPanelRef.value;
+  if (!panel || recoveringCanvas.value) return;
+  recoveringCanvas.value = { key, action };
+  try {
+    if (action === "reload") {
+      const confirmed = await ElMessageBox.confirm("重新载入成功后会放弃这张画布的当前草稿。需要保留修改时，请先另存副本。", "重新载入画布", {
+        type: "warning", confirmButtonText: "重新载入", cancelButtonText: "取消",
+      }).then(() => true, () => false);
+      if (!confirmed || canvasPanelRef.value !== panel) return;
+    }
+    const result = await panel.recoverCanvas(key, action);
+    if (action === "copy") ElMessage.success(result.replaced ? `已另存为 ${result.target}` : `已另存为 ${result.target}，当前草稿仍保留`);
+  } catch (error) {
+    ElMessage.error(axios.isAxiosError<{ message?: string }>(error) ? error.response?.data?.message || "处理画布冲突失败" : error instanceof Error ? error.message : "处理画布冲突失败");
+  } finally { recoveringCanvas.value = undefined; }
+}
 const documentPanelCache = shallowRef<{ directory: string; instance: InstanceType<typeof documentPanel> }>();
 const documentPanelRef = computed(() => documentPanelCache.value?.directory === workspaceStore.project?.directory ? documentPanelCache.value?.instance : undefined);
 watch(() => workspaceStore.project?.directory, () => { documentPanelCache.value = undefined; }, { flush: "sync" });
@@ -318,7 +347,7 @@ function resolveDocumentNodeFile(directory: string, path: string) {
   return canvasPanelRef.value.resolveDocumentNodeFile(directory, path);
 }
 
-function observeDocumentNode(directory: string, canvasPath: string, nodeId: string, onState: (state: { dirty: boolean; error: string; deleted: boolean }) => void) {
+function observeDocumentNode(directory: string, canvasPath: string, nodeId: string, onState: (state: NodeDocumentState) => void) {
   if (!canvasPanelRef.value) throw new Error("画布尚未就绪");
   return canvasPanelRef.value.observeDocumentNode(directory, canvasPath, nodeId, onState);
 }
@@ -397,6 +426,28 @@ function saveDocumentNode(directory: string, canvasPath: string, nodeId: string,
         gap: 5px;
         padding: 0 3px;
         line-height: 24px;
+      }
+    }
+
+    .canvasConflicts {
+      position: absolute;
+      top: 62px;
+      left: 50%;
+      z-index: 6;
+      display: grid;
+      gap: 8px;
+      width: min(520px, calc(100% - 30px));
+      max-height: 45vh;
+      overflow: auto;
+      transform: translateX(-50%);
+      pointer-events: auto;
+
+      .conflictActions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 6px;
+        .el-button { margin-left: 0; }
       }
     }
 

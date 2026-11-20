@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import { error } from "@/lib/responseFormat";
 import { readSession, runAsRequestUser } from "@/utils/auth";
 
-const bundles = new Set(["GET /api/nodes/files", "GET /api/ext/read"]);
+const embeddedResources = new Set(["GET /api/nodes/files", "GET /api/ext/read", "GET /api/tools/client", "GET /api/assets/read"]);
 
 const memberRoutes = new Set([
   "POST /api/auth/logout",
@@ -13,6 +13,25 @@ const memberRoutes = new Set([
   "GET /api/projects/members",
   "PUT /api/projects/share",
   "DELETE /api/projects/unshare",
+  "POST /api/agent",
+  "POST /api/agent/answer",
+  "POST /api/agent/canvasResult",
+  "POST /api/agent/create",
+  "GET /api/agent/get",
+  "GET /api/agent/list",
+  "DELETE /api/agent/message",
+  "DELETE /api/agent/remove",
+  "PATCH /api/agent/rename",
+  "GET /api/agent/skills",
+  "GET /api/tools/renderers",
+  "GET /api/agent/mentionSource",
+  "POST /api/singleAgent/create",
+  "POST /api/singleAgent/run",
+  "POST /api/singleAgent/control",
+  "POST /api/singleAgent/answer",
+  "POST /api/singleAgent/toolResult",
+  "GET /api/assets/list",
+  "POST /api/workspaces/files/importImage",
   "GET /api/workspaces/check",
   "GET /api/workspaces/files/list",
   "GET /api/workspaces/files/read",
@@ -38,6 +57,10 @@ const adminRoutes = new Set([
   "GET /api/auth/members",
   "POST /api/auth/createMember",
   "POST /api/projects/register",
+  "PUT /api/assets/save",
+  "POST /api/assets/mkdir",
+  "POST /api/assets/rename",
+  "DELETE /api/assets/remove",
   "POST /api/providers/models",
   "GET /api/providers/media/list",
   "POST /api/providers/media/models",
@@ -85,11 +108,11 @@ export const multiUserAccess: RequestHandler = (req, res, next) => {
   }
   const user = readSession(req);
   if (!user) return void res.status(401).json(error("请先登录", null, 401));
-  if (!bundles.has(route) && req.get("x-toonflow-user") !== user.id) {
+  if (!embeddedResources.has(route) && req.get("x-toonflow-user") !== user.id) {
     return void res.status(401).json(error("登录账号已变更，请重新加载页面", null, 401));
   }
   // ACT: 精确匹配方法与路径，由各工程接口继续校验所请求的项目。新增接口默认关闭。
-  if (!bundles.has(route) && !memberRoutes.has(route) && !(user.role === "admin" && adminRoutes.has(route))) {
+  if (!embeddedResources.has(route) && !memberRoutes.has(route) && !(user.role === "admin" && adminRoutes.has(route))) {
     return void res.status(403).json(error("当前账号无权访问此功能", null, 403));
   }
   res.set("Cross-Origin-Resource-Policy", "same-origin");

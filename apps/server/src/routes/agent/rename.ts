@@ -10,6 +10,7 @@ export default Router().patch("/", validateFields({
   name: z.string().trim().min(1).max(80),
 }), async (req, res) => {
   const { directory, sessionFile, name } = req.body as { directory: string; sessionFile: string; name: string };
-  const { directory: cwd, path } = await u.workspaceFile.resolveWorkspaceFile(req, directory, `.agent/sessions/${sessionFile}`);
+  const cwd = await u.workspace.resolveWorkspace(req, directory);
+  const { path } = await u.agent.resolveSessionPath(cwd, sessionFile);
   res.json(success(await u.agent.renameAgentSession(cwd, path, name.trim())));
 });

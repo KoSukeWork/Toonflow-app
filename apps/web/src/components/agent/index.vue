@@ -36,10 +36,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch, type ComponentPublicInstance } from "vue";
 import axios from "axios";
+import { authState } from "@/lib/auth";
+import useWorkspaceFiles from "@/lib/workspaceFiles";
 import { translate } from "@toonflow/i18n/vue";
 import { ElMessage } from "element-plus";
 import { useWorkspaceStore } from "@/stores/workspace";
-import useWorkspaceFiles from "@/lib/workspaceFiles";
 import type { AgentConversation, AgentHistory } from "./types";
 import type { AgentEvent, AgentSubAgent } from "@toonflow/server/agent/types";
 import agentMenu from "./menu.vue";
@@ -265,7 +266,8 @@ async function removeConversation(file: string) {
   const currentRequest = ++requestId;
   loading.value = true;
   try {
-    await useWorkspaceFiles(directory).remove(`.agent/sessions/${file}`);
+    if (!authState.value.enabled) await useWorkspaceFiles(directory).remove(`.agent/sessions/${file}`);
+    else await axios.delete("/api/agent/remove", { data: { directory, sessionFile: file }, headers: { "x-toonflow-workspace": "1" } });
     if (currentRequest !== requestId) return;
     history.value = history.value.filter(item => item.file !== file);
     if (file === sessionFile.value) {

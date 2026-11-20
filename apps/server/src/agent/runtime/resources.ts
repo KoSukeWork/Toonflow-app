@@ -1,18 +1,25 @@
 import { t } from "@/lib/i18n";
 import { readFile } from "@toonflow/file";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { DefaultResourceLoader, SettingsManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { buildSystemPrompt } from "@/agent/runtime/prompt";
 import { loadAgentSkills } from "@/agent/skills";
 import { resolveWorkspacePath } from "@/utils/workspace/files";
 import { isMemoryEnabled, readDocument } from "@/utils/personalization";
 import conf from "@/utils/conf";
+import { isMultiUserEnabled } from "@/utils/auth";
 import { getRuntimePlatform } from "@/lib/platform";
+
+// 多人模式只从服务端管理的位置解析 SDK 包、扩展和资源，项目文件通过业务入口读取。
+export function agentResourcePaths(cwd: string) {
+  const root = isMultiUserEnabled() ? join(dirname(conf.path), "agentRuntime") : cwd;
+  return { cwd: root, agentDir: join(root, ".agent") };
+}
 
 export async function createAgentResources(cwd: string, tools: ToolDefinition[], settings = SettingsManager.inMemory(), instructions = "") {
   const savedPrompt = conf.get("settings", {}).agentSystemPrompt;
   const systemPrompt = typeof savedPrompt === "string" ? savedPrompt : undefined;
-  const agentDir = join(cwd, ".agent");
+  const paths = agentResourcePaths(cwd);
   const { path: agentsPath } = await resolveWorkspacePath(cwd, "AGENTS.md");
   const agentsContent = await readFile(agentsPath, "utf8").catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return "";
@@ -24,8 +31,7 @@ export async function createAgentResources(cwd: string, tools: ToolDefinition[],
     ? { ...skills, skills: skills.skills.map(skill => ({ ...skill, disableModelInvocation: true })) }
     : skills;
   const resourceLoader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
+    ...paths,
     settingsManager: settings,
     noExtensions: true,
     noSkills: true,
@@ -44,5 +50,5 @@ export async function createAgentResources(cwd: string, tools: ToolDefinition[],
     ].filter(Boolean),
   });
   await resourceLoader.reload();
-  return { agentDir, settingsManager: settings, resourceLoader };
+  return { agentDir: paths.agentDir, settingsManager: settings, resourceLoader };
 }
