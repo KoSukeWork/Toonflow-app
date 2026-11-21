@@ -171,6 +171,6 @@ import.meta.hot?.dispose(() => {
 
 export async function resolveExtension(resource: ExtResource, id: string): Promise<ExtDefinition> {
   const extension = (await extensionCandidates(resource)).find(extension => extension.id === id);
-  if (!extension) throw new Error(`尚未启用支持此文件的扩展，请到插件市场安装或启用：${resource.label}`);
+  if (!extension) throw new Error(`尚未启用支持此文件的扩展，请到「插件」安装或启用：${resource.label}`);
   return defineExt({ ...extension, load: async () => (await loadExtension(extension)).load() });
 }

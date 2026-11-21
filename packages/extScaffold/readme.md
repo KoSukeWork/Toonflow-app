@@ -60,7 +60,7 @@ export default defineExt({ ...metadata, load: () => import("./index.vue") });
 
 可选 `icon` 是图片 URL，允许 `http:`、`https:`，或 SVG、PNG、JPEG、WebP、GIF、AVIF 的 `data:image` URL。图标随扩展产物声明，宿主只按图片展示；未声明时使用通用文件图标。内置扩展和生成模板使用内嵌 SVG，无需额外图片请求。
 
-可选 `configRules` 复用插件市场现有的 form-create `Rule[]`，每条 `rule.value` 提供默认值，不另建设置 schema。规则必须可序列化为 JSON，最多 100 项；不能包含函数。未声明或空数组时不显示该扩展的设置入口。
+可选 `configRules` 复用「插件」面板现有的 form-create `Rule[]`，每条 `rule.value` 提供默认值，不另建设置 schema。规则必须可序列化为 JSON，最多 100 项；不能包含函数。未声明或空数组时不显示该扩展的设置入口。
 
 布局 `children` 和条件 `control[].rule` 中的字段同样保存。隐藏且未提交的条件字段不触发服务端必填校验。
 
@@ -146,6 +146,6 @@ Object.assign(window, { toonflowExtHost: { vue, elementPlus, i18n } });
 
 运行时使用 `@toonflow/ext-scaffold/runtime`；构建配置使用 `@toonflow/ext-scaffold`，避免把 Vite 与文件系统代码打包到浏览器。Element Plus 的基础样式由宿主加载，扩展自身的组件样式会打入产物。
 
-`bun run --cwd packages/ext/myEditor dev` 持续构建，并把产物原子替换到 `data/ext/`，供本机插件市场与文档宿主读取。`NODE_ENV=dev` 或 `--mode development` 的单次构建同样同步；生产构建只输出 `build/ext/`。
+`bun run --cwd packages/ext/myEditor dev` 持续构建，并把产物原子替换到 `data/ext/`，供本机「插件」面板与文档宿主读取。`NODE_ENV=dev` 或 `--mode development` 的单次构建同样同步；生产构建只输出 `build/ext/`。
 
-市场元数据包含 `id`、`displayName`、可选 `icon`、`configRules`、`extensions`、`resourceKind`、可选 `text`、`version` 和 `readme`。`load` 留在运行时导出，不写入 JSON 元数据。插件市场负责安装、更新与启停，脚手架负责声明、生成和独立构建。
+市场元数据包含 `id`、`displayName`、可选 `icon`、`configRules`、`extensions`、`resourceKind`、可选 `text`、`version` 和 `readme`。`load` 留在运行时导出，不写入 JSON 元数据。「插件」面板负责安装、更新与启停，脚手架负责声明、生成和独立构建。

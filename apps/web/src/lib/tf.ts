@@ -14,32 +14,6 @@ export type TfPayParams = {
   payType: "wechat" | "alipay";
 };
 
-type TfPlugin = {
-  id: number;
-  name: string;
-  identifier: string;
-  userId: number;
-  supplier: string;
-  type: "node" | "skill" | "tool" | "agent" | "ext";
-  state: number;
-  desc: string;
-  link: string;
-  fileName: string;
-  creationTime: number;
-  installation: number;
-  download: number;
-  version: string;
-  updateById: number | null;
-  isCollected: boolean;
-};
-
-type TfPluginParams = {
-  page: number;
-  limit: number;
-  type: "all" | "node" | "skill" | "tool" | "agent" | "ext" | "my" | "collection";
-  searchKeyword?: string;
-};
-
 export function isTfRouterProvider(provider: { id: string; apiUrl: string }) {
   return provider.id.toLowerCase() === "tfrouter" && URL.canParse(provider.apiUrl)
     && new URL(provider.apiUrl).origin === "https://api.toonflow.net";
@@ -104,20 +78,5 @@ export default {
     if (!payment || typeof payment.orderNumber !== "string" || !payment.orderNumber.trim()
       || (payment.payUrl !== undefined && typeof payment.payUrl !== "string")) throw new Error("支付响应格式不正确");
     return payment;
-  },
-
-  async getPlugIn(params: TfPluginParams, options?: TfRequestOptions) {
-    if (!Number.isSafeInteger(params.page) || params.page < 1) throw new Error("页码必须为正整数");
-    if (!Number.isSafeInteger(params.limit) || params.limit < 1 || params.limit > 50) throw new Error("每页数量必须为 1 至 50 的整数");
-    const { data } = await client.post<TfResponse<{ list: TfPlugin[]; total: number }>>("/v1/plugin/getPlugin", params, requestOptions(options));
-    return responseData(data, "加载插件市场失败");
-  },
-
-  async toggleCollection(pluginId: number, options?: TfRequestOptions): Promise<{ collected: boolean }> {
-    if (!Number.isSafeInteger(pluginId) || pluginId < 1) throw new Error("插件 ID 必须为正整数");
-    const { data } = await client.post<TfResponse<{ collected: boolean }>>("/v1/plugin/toggleCollection", { pluginId }, requestOptions(options));
-    const collection = responseData(data, "更新插件收藏失败");
-    if (typeof collection?.collected !== "boolean") throw new Error("插件收藏响应格式不正确");
-    return collection;
   },
 };

@@ -148,7 +148,7 @@ async function restoreLayout() {
 
 async function chooseExtension(resource: ExtResource, force: boolean) {
   const options = await extensionCandidates(resource);
-  if (!options.length) throw new Error(`尚未启用支持此文件的扩展，请到插件市场安装或启用：${resource.label}`);
+  if (!options.length) throw new Error(`尚未启用支持此文件的扩展，请到「插件」安装或启用：${resource.label}`);
   const key = resource.kind === "canvasNode" ? "canvasNode" : resource.path.split(".").at(-1)!.toLowerCase();
   const associations = settings.value.documentExtensions as Record<string, string> | undefined;
   const defaultId = options.find(option => option.id === associations?.[key])?.id;

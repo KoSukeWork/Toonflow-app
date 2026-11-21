@@ -322,7 +322,6 @@
     "apps/web/src/components/settings/panels/developer/systemPromptDialog.vue",
     "apps/web/src/components/settings/panels/languageModel/addProviderDialog.vue",
     "apps/web/src/components/settings/panels/personalization.vue",
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue",
     "apps/web/src/components/settings/tfAccount.vue",
     "apps/web/src/components/settings/tfRechargeDialog.vue",
     "apps/web/src/main.ts",
@@ -903,10 +902,7 @@
   "媒体模型": [
     "apps/web/src/components/settings/index.vue"
   ],
-  "插件市场": [
-    "apps/web/src/components/settings/index.vue"
-  ],
-  "市场": [
+  "插件": [
     "apps/web/src/components/settings/index.vue"
   ],
   "通讯": [
@@ -926,7 +922,6 @@
   ],
   "安装插件失败": [
     "apps/web/src/components/settings/installPluginFile.ts",
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue",
     "apps/web/src/lib/desktopProtocol.ts"
   ],
   "安装接口未返回有效的插件名称": [
@@ -988,7 +983,7 @@
   "Agent（暂未开放）": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
-  "{0}支持本地文件或文件直链，安装后可在插件市场查看。": [
+  "{0}支持本地文件或文件直链，安装后可在「插件」查看。": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
   "强制安装（允许覆盖同版本或降级）": [
@@ -1977,7 +1972,6 @@
   "媒体供应商配置格式无效": [
     "apps/web/src/components/settings/panels/mediaModel/addCustomProviderDialog.vue",
     "apps/web/src/components/settings/panels/mediaModel/editProviderDialog.vue",
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue",
     "apps/web/src/pages/hello/index.vue"
   ],
   "当前供应商配置格式无效": [
@@ -2665,9 +2659,6 @@
   "插件列表": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
-  "发现插件": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
   "已安装": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
@@ -2693,15 +2684,6 @@
   "测试阶段，暂未开放": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
-  "我的插件": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "收藏": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "我的": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
   "搜索插件": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
@@ -2709,28 +2691,7 @@
     "apps/web/src/components/settings/panels/pluginMarket/index.vue",
     "apps/web/src/pages/workspace/panels/document/components/workspaceSearch.vue"
   ],
-  "填写 TF-Router API Key": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "保存并继续": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "前往 TF-Router 获取 API Key": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "{0}列表": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
   "{0} 的 GitHub": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "暂不支持安装": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "取消收藏": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "添加收藏": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
   "已禁用": [
@@ -2775,28 +2736,7 @@
   "暂无符合条件的已安装插件": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
-  "暂无符合条件的收藏插件": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "暂无符合条件的已发布插件": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "未找到相关插件": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
   "插件说明": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "填写 TF-Router API Key 后即可浏览插件市场": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "插件市场列表格式错误": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "加载插件市场失败，请重试": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "TF-Router 用户信息错误，请重新填写 API Key": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
   "{0}列表格式错误": [
@@ -2805,37 +2745,10 @@
   "加载{0}失败，请重新打开列表重试": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
-  "请输入有效的 TF-Router API Key": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "文本模型配置格式无效": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "存在同名的非官方 TF-router 供应商，请先在文本模型中修改其 ID": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "TF-router 媒体配置格式无效": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "验证或保存失败，请重试": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
   "Agent Card 地址已复制": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
   "Agent Card 地址": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "收藏成功": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "已取消收藏": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "修改收藏失败，请重试": [
-    "apps/web/src/components/settings/panels/pluginMarket/index.vue"
-  ],
-  "{0}已更新": [
     "apps/web/src/components/settings/panels/pluginMarket/index.vue"
   ],
   "{0}已安装": [
@@ -3585,18 +3498,6 @@
     "apps/web/src/lib/tf.ts"
   ],
   "支付响应格式不正确": [
-    "apps/web/src/lib/tf.ts"
-  ],
-  "页码必须为正整数": [
-    "apps/web/src/lib/tf.ts"
-  ],
-  "每页数量必须为 1 至 50 的整数": [
-    "apps/web/src/lib/tf.ts"
-  ],
-  "插件 ID 必须为正整数": [
-    "apps/web/src/lib/tf.ts"
-  ],
-  "插件收藏响应格式不正确": [
     "apps/web/src/lib/tf.ts"
   ],
   "请先选择工作目录": [
@@ -5005,7 +4906,7 @@
   "扩展加载失败：{0}": [
     "apps/web/src/pages/workspace/panels/document/extensions.ts"
   ],
-  "尚未启用支持此文件的扩展，请到插件市场安装或启用：{0}": [
+  "尚未启用支持此文件的扩展，请到「插件」安装或启用：{0}": [
     "apps/web/src/pages/workspace/panels/document/extensions.ts",
     "apps/web/src/pages/workspace/panels/document/index.vue"
   ],
@@ -6061,7 +5962,7 @@
     "apps/server/src/utils/desktop/index.ts",
     "apps/server/src/utils/media/provider.ts"
   ],
-  "当前操作需要 FFmpeg，请在插件市场下载安装或配置可用版本后重试。": [
+  "当前操作需要 FFmpeg，请在「插件」下载安装或配置可用版本后重试。": [
     "apps/server/src/utils/ffmpeg/index.ts"
   ],
   "正在下载，请等待完成或取消后再试": [

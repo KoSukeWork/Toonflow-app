@@ -6,7 +6,7 @@
 
 ## 🧩 插件与模型扩展
 
-通过“设置 → 插件市场”发现和管理节点、工具与技能；市场顶部可以直接打开 [网页版市场](https://api.toonflow.net/console/plugIn) 和 [开发者文档](https://qcn7xdsqgc4z.feishu.cn/docx/KNBNd9naqolsy6xjAOCcEAkqnRd)。市场需要 TF-Router API Key，未配置时会提示填写。
+在“设置 → 插件 → 已安装”中，可以从本地文件安装插件，也可以搜索、配置和管理已安装的插件。面板顶部提供 [网页版市场](https://api.toonflow.net/console/plugIn) 和 [开发者文档](https://qcn7xdsqgc4z.feishu.cn/docx/KNBNd9naqolsy6xjAOCcEAkqnRd)。
 
 | 扩展类型 | 用途 | 开发入口 |
 | --- | --- | --- |

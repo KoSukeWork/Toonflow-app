@@ -447,7 +447,7 @@ export default createNodeConfig({
 }, import.meta.url);
 ```
 
-`name` 是节点的唯一标识，决定文件名和 VueFlow 注册名；`displayName` 是插件市场显示的名称。`author` 和 `github` 可以留空，市场只显示已填写的信息。
+`name` 是节点的唯一标识，决定文件名和 VueFlow 注册名；`displayName` 是「插件」面板显示的名称。`author` 和 `github` 可以留空，市场只显示已填写的信息。
 
 版本由每个节点子包的 `package.json.version` 维护，例如 `"version": "2.0.0"`，发布新版本时修改该字段，无需在 Vite 配置重复填写。构建要求版本为非空字符串，并监听 `package.json` 的变化。
 
@@ -475,7 +475,7 @@ export default createNodeConfig({
 }, import.meta.url);
 ```
 
-用户在设置的插件市场中打开节点的“配置”表单并保存；缺少必填配置时，配置按钮显示小红点。配置按节点类型保存，同类型的所有节点实例共用，不写入 `node.data` 或画布 JSON。
+用户在设置的「插件」面板中打开节点的“配置”表单并保存；缺少必填配置时，配置按钮显示小红点。配置按节点类型保存，同类型的所有节点实例共用，不写入 `node.data` 或画布 JSON。
 
 ```ts
 const { config } = useNode();
