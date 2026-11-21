@@ -21,8 +21,18 @@ const config = new conf<{ settings: Record<string, unknown>; userPreferences: Re
   watch: true,
 });
 
+function removeUsageSettings(settings: Record<string, unknown>) {
+  const privacy = settings?.privacy;
+  if (!privacy || typeof privacy !== "object" || Array.isArray(privacy)) return false;
+  if (!Object.hasOwn(privacy, "anonymousId") && !Object.hasOwn(privacy, "dataCollectionEnabled")) return false;
+  Reflect.deleteProperty(privacy, "anonymousId");
+  Reflect.deleteProperty(privacy, "dataCollectionEnabled");
+  if (!Object.keys(privacy).length) delete settings.privacy;
+  return true;
+}
+
 export function removeLegacySettings(settings: Record<string, unknown>) {
-  let changed = false;
+  let changed = removeUsageSettings(settings);
   // ACT: 只清理已废弃字段，保留其他设置和插件配置。
   for (const [record, key] of [[settings, "developerConfirmed"], [settings.general, "systemPrompt"], [settings.stores, "toonflow.developer"]] as const) {
     if (record && typeof record === "object" && !Array.isArray(record) && Object.hasOwn(record, key)) {
@@ -56,8 +66,12 @@ export function cleanNodeMenuSettings(settings: Record<string, unknown>) {
   return true;
 }
 
-const settings = config.get("settings", {});
-if (removeLegacySettings(settings)) config.set("settings", settings);
+const store = config.store;
+let changed = removeLegacySettings(store.settings ?? {});
+for (const preferences of Object.values(store.userPreferences ?? {})) {
+  if (removeUsageSettings(preferences)) changed = true;
+}
+if (changed) config.store = store;
 
 // ACT: 仅初始化尚未配置的文本供应商；已有列表（包括用户清空的列表）保持原样。
 if (!config.has("settings.customProviders")) {

@@ -105,7 +105,6 @@ declare module 'vue' {
     NodeMenuSettings: typeof import('./../components/settings/panels/general/nodeMenuSettings.vue')['default']
     Personalization: typeof import('./../components/settings/panels/personalization.vue')['default']
     PluginMarket: typeof import('./../components/settings/panels/pluginMarket/index.vue')['default']
-    Privacy: typeof import('./../components/settings/panels/privacy.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     Settings: typeof import('./../components/settings/index.vue')['default']

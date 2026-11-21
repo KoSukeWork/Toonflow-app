@@ -948,9 +948,6 @@
   "其他": [
     "apps/web/src/components/settings/index.vue"
   ],
-  "隐私": [
-    "apps/web/src/components/settings/index.vue"
-  ],
   "开发者选项": [
     "apps/web/src/components/settings/index.vue"
   ],
@@ -3171,57 +3168,6 @@
   ],
   "保存文件失败，请重试": [
     "apps/web/src/components/settings/panels/pluginMarket/skillEditorDialog.vue"
-  ],
-  "匿名使用统计": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "帮助我们了解常用功能，改进使用体验。默认开启，可随时关闭。": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "统计内容": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "统计不包含提示词、对话、文件内容、项目名称、路径、账号或密钥。": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "匿名 ID": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "使用与回访": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "随机匿名标识、访问次数与时间": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "使用活跃": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "使用时长和交互次数，不含输入内容": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "运行环境": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "软件版本、桌面或网页端、系统、浏览器和语言": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "功能使用": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "引导、画布与文档的使用情况": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "使用规模": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "项目、模型配置、节点与连线数量，以及节点类型": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "Agent 使用": [
-    "apps/web/src/components/settings/panels/privacy.vue"
-  ],
-  "发送次数、完成情况和耗时": [
-    "apps/web/src/components/settings/panels/privacy.vue"
   ],
   "让创作空间更合你的习惯，修改会自动保存。": [
     "apps/web/src/components/settings/panels/ui.vue"

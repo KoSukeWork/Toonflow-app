@@ -47,7 +47,6 @@ import {
   IconBuildingStore,
   IconInfoCircle,
   IconCode,
-  IconShieldLock,
   IconPlugConnected,
   IconUserCog,
   IconSubtitlesAi,
@@ -83,13 +82,12 @@ const panels = [
     groupLabel: "其他",
     component: defineAsyncComponent(() => import("./panels/personalization.vue")),
   },
-  { id: "privacy", label: "隐私", icon: IconShieldLock, component: defineAsyncComponent(() => import("./panels/privacy.vue")) },
   { id: "developer", label: "开发者选项", icon: IconCode, component: defineAsyncComponent(() => import("./panels/developer/index.vue")) },
   { id: "about", label: "关于", icon: IconInfoCircle, component: defineAsyncComponent(() => import("./panels/about.vue")) },
 ];
 const settingsPanels = computed(() => {
   if (!authState.value.enabled) return panels;
-  const personalPanels = ["ui", "general", "personalization", "privacy", "about"];
+  const personalPanels = ["ui", "general", "personalization", "about"];
   const teamPanels = ["languageModel", "mediaModel", "pluginMarket"];
   return panels.filter(panel => personalPanels.includes(panel.id) || (authState.value.user?.role === "admin" && teamPanels.includes(panel.id)));
 });

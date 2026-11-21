@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from "node:util";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AuthUser } from "@/types/auth";
 import { providerSchema } from "@/utils/ai";
@@ -10,7 +9,6 @@ type SettingsChange = { key: string; before?: unknown; value?: unknown };
 const personalFields = {
   ui: z.record(z.string(), z.json()),
   general: z.record(z.string(), z.json()),
-  privacy: z.strictObject({ anonymousId: z.union([z.uuid(), z.literal("")]).optional(), dataCollectionEnabled: z.boolean().optional() }),
   documentExtensions: z.record(z.string(), z.string()),
   helloCompleted: z.boolean(),
   updateBoxSeenBuilds: z.array(z.string()),
@@ -26,12 +24,6 @@ function userPreferences(user: AuthUser) {
 export function readUserSettings(user: AuthUser) {
   const settings = conf.get("settings", {});
   const preferences = userPreferences(user);
-  const privacy = preferences.privacy as { anonymousId?: string; dataCollectionEnabled?: boolean } | undefined;
-  if (privacy?.dataCollectionEnabled !== false && !z.uuid().safeParse(privacy?.anonymousId).success) {
-    // 同一账号首次同时打开多个标签页时，共用服务端分配的匿名统计标识。
-    preferences.privacy = { ...privacy, anonymousId: randomUUID() };
-    conf.set("userPreferences", { ...conf.get("userPreferences", {}), [user.id]: preferences });
-  }
   if (user.role === "admin") return { ...Object.fromEntries(Object.entries(settings).filter(([key]) => sharedKeys.has(key))), ...preferences };
   const providers = Array.isArray(settings.customProviders) ? settings.customProviders : [];
   const customProviders = providers.flatMap(provider => {
