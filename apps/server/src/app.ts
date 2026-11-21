@@ -10,6 +10,7 @@ import { errorFromCause } from "@/lib/responseFormat";
 import desktopRequest from "@/lib/desktop";
 import { getRuntimePlatform } from "@/lib/platform";
 import initializePlugins from "@/utils/plugins/initialize";
+import initializeLanPlugins from "@/utils/plugins/initializeLanPlugins";
 import { languageRequest, resolveRequestLocale, runWithLocale, setLocaleFallback, translateError, translateMessage } from "@/lib/i18n";
 import { detectLocale, normalizeLocale } from "@toonflow/i18n";
 import { initializeAccounts, isMultiUserEnabled } from "@/utils/auth";
@@ -28,6 +29,7 @@ export async function createApp({
   skillsRoot,
   agentsRoot,
   pluginRevision,
+  upgradeBundledPlugins = false,
 }: {
   webRoot: string;
   appVersion?: string;
@@ -39,15 +41,20 @@ export async function createApp({
   skillsRoot?: string;
   agentsRoot?: string;
   pluginRevision?: string;
+  upgradeBundledPlugins?: boolean;
 }) {
   // conf 由下方的路由动态加载，必须先确定整个进程共用的数据目录。
   if (dataDirectory) process.env.TOONFLOW_DATA_DIR = resolve(dataDirectory);
   const { default: conf } = await import("@/utils/conf");
   setLocaleFallback(() => normalizeLocale((conf.get("settings", {}).ui as { language?: unknown } | undefined)?.language)
     ?? detectLocale([Intl.DateTimeFormat().resolvedOptions().locale]));
+  const multiUser = isMultiUserEnabled();
+  const initializeBundledPlugins = (target: string, source: string, fileFilter: RegExp) => multiUser && upgradeBundledPlugins
+    ? initializeLanPlugins(target, source, fileFilter)
+    : initializePlugins(target, source, fileFilter, pluginRevision);
   if (dataDirectory && toolsRoot)
-    await initializePlugins(resolve(dataDirectory, "tools"), toolsRoot, /^[a-z][a-zA-Z0-9]*\.tool\.js$/, pluginRevision);
-  if (dataDirectory && nodesRoot) await initializePlugins(resolve(dataDirectory, "nodes"), nodesRoot, /^[a-z][a-zA-Z0-9]*\.umd\.js$/, pluginRevision);
+    await initializeBundledPlugins(resolve(dataDirectory, "tools"), toolsRoot, /^[a-z][a-zA-Z0-9]*\.tool\.js$/);
+  if (dataDirectory && nodesRoot) await initializeBundledPlugins(resolve(dataDirectory, "nodes"), nodesRoot, /^[a-z][a-zA-Z0-9]*\.umd\.js$/);
   if (dataDirectory && extRoot) {
     const { default: initializeExt } = await import("@/utils/plugins/initializeExt");
     await initializeExt(resolve(dataDirectory, "ext"), extRoot, pluginRevision);
@@ -74,7 +81,6 @@ export async function createApp({
   if (dataDirectory && agentsRoot) await initializePlugins(resolve(dataDirectory, "agents"), agentsRoot);
   const app = express();
   app.locals.appVersion = appVersion;
-  const multiUser = isMultiUserEnabled();
   if (multiUser) {
     const root = dirname(conf.path);
     await initializeAccounts(app, root);

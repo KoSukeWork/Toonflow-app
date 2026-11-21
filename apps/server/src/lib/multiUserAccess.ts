@@ -110,8 +110,10 @@ export const multiUserAccess: RequestHandler = (req, res, next) => {
   }
   const user = readSession(req);
   if (!user) return void res.status(401).json(error("请先登录", null, 401));
-  if (!embeddedResources.has(route) && req.get("x-toonflow-user") !== user.id) {
-    return void res.status(401).json(error("登录账号已变更，请重新加载页面", null, 401));
+  if (!embeddedResources.has(route)) {
+    const accountId = req.get("x-toonflow-user");
+    if (!accountId) return void res.status(400).json(error("请求缺少账号标识（x-toonflow-user），请更新客户端或插件后重试", null, 400));
+    if (accountId !== user.id) return void res.status(401).json(error("登录账号已变更，请重新加载页面", null, 401));
   }
   // ACT: 精确匹配方法与路径，由各工程接口继续校验所请求的项目。新增接口默认关闭。
   if (!embeddedResources.has(route) && !memberRoutes.has(route) && !(user.role === "admin" && adminRoutes.has(route))) {

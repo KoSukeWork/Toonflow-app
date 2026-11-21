@@ -445,13 +445,7 @@ bun run start:server
 
 迁移时备份整个数据目录，包括 `accounts.sqlite`、`settings.json`、`users/` 和 `workspaces/`。将旧工程放在 `workspaces/` 下，由管理员在「登记已有项目」填写相对目录（例如 `myProject`），并指定所有者。已登记目录的上下级目录不可再次登记。旧工程的 `.agent/sessions/` 仍属于工程文件，分享旧工程前请检查其中的历史内容。
 
-沿用旧数据时，`data/nodes/initialized` 会让服务保留旧版节点脚本。旧版生成节点缺少多用户请求头，需要逐个更新对应的 UMD 文件。例如从新版容器取出文本节点：
-
-```sh
-docker compose -f docker-compose.yml cp toonflow:/app/build/nodes/textNode.umd.js ./textNode.umd.js
-```
-
-管理员在「设置 → 插件市场 → 安装插件」选择此文件，遇到同版本提示时确认覆盖。该操作只替换同名脚本，节点配置及其他自定义节点继续保留。独立部署可从 `build/nodes/` 直接选取对应文件。
+沿用旧数据时，多人版独立服务会在启动时自动升级内容与已知原厂版本一致的内置节点和工具。系统保留本地改过的脚本、禁用状态和插件配置，已卸载的插件仍需手动安装。
 
 多人模式按单服务进程部署。宿主浏览器、任意 FFmpeg 命令、MCP、设备互联和子 Agent／A2A 仍限于单机模式。
 

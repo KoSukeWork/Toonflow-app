@@ -4,7 +4,7 @@
       <nav class="marketNav" aria-label="插件列表">
         <button class="navButton" type="button" :aria-pressed="isMarketTab" @click="activeTab = 'discover'">发现插件</button>
         <button class="navButton" type="button" :aria-pressed="activeTab === 'installed'" @click="activeTab = 'installed'">已安装</button>
-        <button class="navButton" type="button" :aria-pressed="activeTab === 'ffmpeg'" @click="activeTab = 'ffmpeg'">FFmpeg</button>
+        <button v-if="!authState.enabled" class="navButton" type="button" :aria-pressed="activeTab === 'ffmpeg'" @click="activeTab = 'ffmpeg'">FFmpeg</button>
       </nav>
       <div class="marketActions">
         <el-button tag="a" href="https://api.toonflow.net/console/plugIn" target="_blank" rel="noopener noreferrer" size="small" text :icon="IconExternalLink">
@@ -271,6 +271,7 @@ import { saveSettings } from "@/stores/settings";
 import tfRouter from "@toonflow/providers/language/tfRouter";
 import { invalidateNodeModels } from "@toonflow/nodes-scaffold/nodeAi";
 import saveFile from "@/lib/saveFile";
+import { authState } from "@/lib/auth";
 import { writeClipboardText } from "@/lib/clipboard";
 import pluginConfigDialog from "./pluginConfigDialog.vue";
 import extensionAssociationsDialog from "./extensionAssociationsDialog.vue";
