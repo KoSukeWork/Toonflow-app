@@ -1,12 +1,12 @@
 <template>
   <div class="imageEditor" :class="{ editing: mode }">
-    <img ref="sourceImage" :src="src" :alt="alt" draggable="false" @load="emit('load', $event)" @error="emit('error', $event)" />
+    <img ref="sourceImage" :src="editingImage?.src || src" :alt="alt" draggable="false" @load="emit('load', $event)" @error="emit('error', $event)" />
     <canvas
       v-if="mode"
       ref="paintCanvas"
       class="paintCanvas nodrag nopan nowheel"
       :class="{ inpaint: mode === 'inpaint' }"
-      :style="{ aspectRatio: `${sourceImage?.naturalWidth} / ${sourceImage?.naturalHeight}`, cursor: tool === 'text' ? 'text' : 'crosshair' }"
+      :style="{ aspectRatio: `${(editingImage ?? sourceImage)?.naturalWidth} / ${(editingImage ?? sourceImage)?.naturalHeight}`, cursor: tool === 'text' ? 'text' : 'crosshair' }"
       :aria-label="mode === 'inpaint' ? '涂抹需要重绘的区域' : '图片标记画布'"
       @pointerdown.stop.prevent="startStroke"
       @pointermove.stop.prevent="moveStroke"
@@ -53,7 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, inject, nextTick, onBeforeUnmount, ref, shallowRef, watch } from "vue";
 import { useNode, useVueFlow } from "@vue-flow/core";
 import { ElButton, ElMessage } from "element-plus";
 import { IconBrush, IconEraser, IconSquare, IconCircle, IconTypography, IconArrowBackUp, IconArrowForwardUp, IconTrash, IconCheck, IconX } from "@tabler/icons-vue";
@@ -62,7 +62,7 @@ import { showNodeError } from "@toonflow/node-shared/showNodeError";
 import { useImageVariationNode } from "../useImageVariationNode";
 import { buildInpaintPrompt, type InpaintDraftInput } from "../imageInpaint";
 
-const props = defineProps<{ src: string; alt: string; toolbarTarget?: HTMLElement; disabled?: boolean }>();
+const props = defineProps<{ src: string; loadOriginal?: () => Promise<string>; alt: string; toolbarTarget?: HTMLElement; disabled?: boolean }>();
 const emit = defineEmits<{ load: [event: Event]; error: [event: Event] }>();
 const { node } = useNode();
 const { addNodes, addEdges, findNode, getNodes, nodeTypes } = useVueFlow();
@@ -71,6 +71,7 @@ const createVariation = useImageVariationNode();
 const getCanvas = inject<(() => { id: string } | undefined) | undefined>("canvas", undefined);
 const batchHistory = inject<(action: () => Promise<void>) => Promise<void>>("batchCanvasHistory", action => action());
 const sourceImage = ref<HTMLImageElement>();
+const editingImage = shallowRef<HTMLImageElement>();
 const paintCanvas = ref<HTMLCanvasElement>();
 const mode = ref<"inpaint" | "mark">();
 const busy = ref(false);
@@ -105,6 +106,7 @@ let operation: AbortController | undefined;
 function cancel() {
   operation?.abort();
   mode.value = undefined;
+  editingImage.value = undefined;
   strokes = [];
   strokeCount.value = historyLength.value = 0;
   hasDrawing.value = false;
@@ -116,15 +118,33 @@ watch(() => getCanvas?.()?.id, cancel, { flush: "sync" });
 onBeforeUnmount(cancel);
 
 async function start(value: "inpaint" | "mark") {
-  const image = sourceImage.value;
-  if (props.disabled || busy.value || !image?.complete || !image.naturalWidth) return;
+  if (props.disabled || busy.value || !sourceImage.value?.naturalWidth) return;
   cancel();
-  tool.value = "brush";
-  mode.value = value;
-  await nextTick();
-  if (!paintCanvas.value) return;
-  paintCanvas.value.width = image.naturalWidth;
-  paintCanvas.value.height = image.naturalHeight;
+  const controller = operation = new AbortController();
+  busy.value = true;
+  try {
+    let image = sourceImage.value;
+    if (props.loadOriginal) {
+      const url = await props.loadOriginal();
+      if (!url || controller.signal.aborted) return;
+      image = new Image();
+      image.src = url;
+      await image.decode();
+    }
+    if (controller.signal.aborted || props.disabled) return;
+    editingImage.value = image;
+    tool.value = "brush";
+    mode.value = value;
+    await nextTick();
+    if (!paintCanvas.value || controller.signal.aborted) return;
+    paintCanvas.value.width = image.naturalWidth;
+    paintCanvas.value.height = image.naturalHeight;
+  } catch (error) {
+    if (!controller.signal.aborted) showNodeError(error, "读取编辑原图失败");
+  } finally {
+    operation = undefined;
+    busy.value = false;
+  }
 }
 
 function getPoint(event: PointerEvent): Point {
@@ -285,14 +305,14 @@ function handleTextKey(event: KeyboardEvent) {
 }
 
 function createCanvas() {
-  const source = sourceImage.value;
+  const source = editingImage.value ?? sourceImage.value;
   if (!source?.naturalWidth || !paintCanvas.value) throw new Error("图片尚未加载完成");
   const canvas = document.createElement("canvas");
   canvas.width = source.naturalWidth;
   canvas.height = source.naturalHeight;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("无法创建绘画画布");
-  return { canvas, context };
+  return { canvas, context, source };
 }
 
 function toFile(canvas: HTMLCanvasElement) {
@@ -311,8 +331,8 @@ async function saveMark() {
   let committed = false;
   try {
     workspace = files.getWorkspaceFiles();
-    const { canvas, context } = createCanvas();
-    context.drawImage(sourceImage.value!, 0, 0);
+    const { canvas, context, source } = createCanvas();
+    context.drawImage(source, 0, 0);
     context.drawImage(paintCanvas.value!, 0, 0);
     const file = await toFile(canvas);
     canvas.width = canvas.height = 0;
@@ -361,7 +381,7 @@ async function createInpaint(input: InpaintDraftInput, signal: AbortSignal) {
     const drawing = createCanvas();
     canvas = drawing.canvas;
     const context = drawing.context;
-    context.drawImage(sourceImage.value!, 0, 0);
+    context.drawImage(drawing.source, 0, 0);
     const original = await uploadNodeFile(workspace, nodeId, await toFile(canvas));
     requestSignal.throwIfAborted();
     context.globalAlpha = 0.55;

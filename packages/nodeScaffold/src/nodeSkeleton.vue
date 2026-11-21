@@ -50,18 +50,18 @@
             :href="downloadUrl || undefined"
             :download="downloadName"
             :icon="IconDownload"
-            :disabled="!downloadUrl"
+            :disabled="!downloadUrl && !downloadFile"
             :loading="downloading"
             :aria-busy="downloading"
             text
             :title="downloading ? '正在保存…' : '下载'"
             aria-label="下载"
             @downloadstate="downloading = $event.detail"
-            @click.stop />
+            @click.stop="runDownload" />
           <el-button
             v-if="fullscreenVisible"
             :icon="IconMaximize"
-            :disabled="!downloadUrl"
+            :disabled="!downloadUrl && !downloadFile"
             text
             title="全屏"
             aria-label="全屏"
@@ -200,6 +200,7 @@ const props = withDefaults(
       bottomWidth?: string | number;
       downloadUrl?: string;
       downloadName?: string;
+      downloadFile?: () => Promise<void>;
       fullscreenVisible?: boolean;
     }
   >(),
@@ -213,6 +214,13 @@ const props = withDefaults(
     bottomWidth: "20vw",
   }
 );
+async function runDownload() {
+  if (!props.downloadFile || downloading.value) return;
+  downloading.value = true;
+  try { await props.downloadFile(); }
+  catch (error) { ElMessage.error(error instanceof Error ? error.message : "保存文件失败"); }
+  finally { downloading.value = false; }
+}
 const handleGroups = computed(() => [
   { type: "target" as const, position: Position.Left, items: props.handles.filter((item) => item.type === "target") },
   { type: "source" as const, position: Position.Right, items: props.handles.filter((item) => item.type === "source") },

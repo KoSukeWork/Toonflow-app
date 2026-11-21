@@ -5,9 +5,8 @@
     :bottomVisible="node.selected && (lightingVisible || multiAngleVisible || editor?.mode === 'inpaint')"
     :bottomWidth="660"
     topWidth="max-content"
-    :downloadUrl="previewUrl"
-    :downloadName="outputFile?.url.split(/[\\/]/).at(-1)"
-    @fullscreen="previewVisible = true"
+    :downloadFile="previewUrl ? downloadOriginal : undefined"
+    @fullscreen="openPreview"
     :style="{ width: previewUrl && imageWidth ? `${imageWidth + 18}px` : undefined }">
     <template v-if="editor?.mode" #top><div ref="paintToolbar" /></template>
     <template #topActions>
@@ -33,6 +32,7 @@
         v-if="previewUrl"
         ref="editor"
         :src="previewUrl"
+        :loadOriginal="loadOriginal"
         :toolbarTarget="paintToolbar"
         :disabled="uploading || lighting?.generating || multiAngle?.generating || panorama?.busy"
         alt="节点图片"
@@ -58,22 +58,23 @@
     </template>
   </nodeSkeleton>
   <imageInpaintPrompt v-if="editor?.mode === 'inpaint'" ref="inpaintPrompt" :target="inpaintTarget" :createDraft="createInpaint" :disabled="uploading" />
-  <imageLighting v-if="lightingVisible" ref="lighting" :src="previewUrl" :source="outputFile" :target="lightingTarget" :disabled="uploading || gridSplit?.splitting" @close="lightingVisible = false" />
-  <imageMultiAngle v-if="multiAngleVisible" ref="multiAngle" :src="previewUrl" :source="outputFile" :target="multiAngleTarget" :disabled="uploading || gridSplit?.splitting" @close="multiAngleVisible = false" />
-  <imagePanorama ref="panorama" :src="previewUrl" :source="outputFile" :disabled="uploading || editor?.busy || lighting?.generating || multiAngle?.generating || gridSplit?.splitting || inpaintPrompt?.creating" @open="openPanorama" />
-  <imageGridSplit ref="gridSplit" :src="previewUrl" :disabled="uploading || lighting?.generating || multiAngle?.generating || panorama?.busy" :active="node.selected" />
+  <imageLighting v-if="lightingVisible && originalUrl" ref="lighting" :src="originalUrl" :source="outputFile" :target="lightingTarget" :disabled="uploading || gridSplit?.splitting" @close="lightingVisible = false" />
+  <imageMultiAngle v-if="multiAngleVisible && originalUrl" ref="multiAngle" :src="originalUrl" :source="outputFile" :target="multiAngleTarget" :disabled="uploading || gridSplit?.splitting" @close="multiAngleVisible = false" />
+  <imagePanorama ref="panorama" :src="previewUrl" :loadOriginal="loadOriginal" :source="outputFile" :disabled="uploading || editor?.busy || lighting?.generating || multiAngle?.generating || gridSplit?.splitting || inpaintPrompt?.creating" @open="openPanorama" />
+  <imageGridSplit ref="gridSplit" :src="previewUrl" :sourceSize="imageSize" :loadOriginal="loadOriginal" :disabled="uploading || lighting?.generating || multiAngle?.generating || panorama?.busy" :active="node.selected" />
   <el-image-viewer
-    v-if="previewVisible && previewUrl"
-    :urlList="[previewUrl]"
+    v-if="previewVisible && originalUrl"
+    :urlList="[originalUrl]"
     teleported
     @close="previewVisible = false" />
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { IconPhoto, IconUpload, IconTransfer, IconLayoutGrid, IconBrush, IconPencil, IconSun, IconCameraRotate, IconPanoramaHorizontal, IconChevronDown } from "@tabler/icons-vue";
 import { ElButton, ElImageViewer, ElMessage } from "element-plus";
 import { nodeSkeleton, nodeTools, useNode, z, type NodeHandle } from "@toonflow/nodes-scaffold/runtime";
+import { useImagePreview } from "@toonflow/node-shared/useImagePreview";
 import imageGridSplit from "./components/imageGridSplit.vue";
 import imageEditor from "./components/imageEditor.vue";
 import imageInpaintPrompt from "./components/imageInpaintPrompt.vue";
@@ -111,10 +112,14 @@ const previewVisible = ref(false);
 const imageWidth = ref(0);
 
 const outputFile = computed(() => outputs.value.image?.dataType === "IMAGE" ? outputs.value.image.value : undefined);
-const previewUrl = files.useFileUrl(
+const { previewUrl, imageSize, originalUrl, loadOriginal, downloadOriginal } = useImagePreview(
   outputFile,
   (error) => showError(error, "图片读取失败")
 );
+watch(originalUrl, url => {
+  if (url) return;
+  previewVisible.value = lightingVisible.value = multiAngleVisible.value = false;
+});
 
 nodeEvent.on("save", () => {
   if (uploading.value || editor.value?.busy || inpaintPrompt.value?.creating || lighting.value?.generating || multiAngle.value?.generating || panorama.value?.busy) throw new Error("图片处理中，请完成后再切换或刷新节点");
@@ -152,8 +157,10 @@ nodeTools.register({
 
 async function resizeImage(event: Event) {
   const image = event.currentTarget as HTMLImageElement;
-  if (!image.naturalWidth || !image.naturalHeight) return;
-  imageWidth.value = 240 * image.naturalWidth / image.naturalHeight;
+  const width = imageSize.value?.width ?? image.naturalWidth;
+  const height = imageSize.value?.height ?? image.naturalHeight;
+  if (!width || !height) return;
+  imageWidth.value = 240 * width / height;
   await nextTick();
   updateNodeInternals();
 }
@@ -164,18 +171,22 @@ function openPanorama() {
   multiAngleVisible.value = false;
 }
 
-function openLighting() {
+async function openPreview() {
+  previewVisible.value = !!await loadOriginal();
+}
+
+async function openLighting() {
   if (uploading.value || editor.value?.busy || inpaintPrompt.value?.creating || lighting.value?.generating || multiAngle.value?.generating || panorama.value?.busy || gridSplit.value?.splitting || !previewUrl.value) return;
   editor.value?.cancel();
   multiAngleVisible.value = false;
-  lightingVisible.value = true;
+  lightingVisible.value = !!await loadOriginal();
 }
 
-function openMultiAngle() {
+async function openMultiAngle() {
   if (uploading.value || editor.value?.busy || inpaintPrompt.value?.creating || lighting.value?.generating || multiAngle.value?.generating || panorama.value?.busy || gridSplit.value?.splitting || !previewUrl.value) return;
   editor.value?.cancel();
   lightingVisible.value = false;
-  multiAngleVisible.value = true;
+  multiAngleVisible.value = !!await loadOriginal();
 }
 
 function startEditor(mode: "inpaint" | "mark") {

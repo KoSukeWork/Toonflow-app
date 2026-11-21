@@ -1,11 +1,15 @@
-import { inject, ref, toValue, watch, type MaybeRefOrGetter } from "vue";
+import { inject, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from "vue";
 import type { NodeMediaValue } from "./values";
 import { useNodePreviewReady } from "./useNodePreviewReady";
+
+type ImageSize = { width: number; height: number };
+type FileUrl = { url: Promise<string>; release(): void; imageSize?(): Promise<ImageSize | undefined>; invalidated?: Readonly<Ref<boolean>> };
 
 export interface WorkspaceFiles {
   list(path?: string): Promise<{ directory: string; entries: { name: string; path: string; type: "file" | "directory" }[] }>;
   read(path: string): Promise<ArrayBuffer>;
-  acquireUrl?(path: string, mimeType: string): { url: Promise<string>; release(): void };
+  acquireUrl?(path: string, mimeType: string, thumbnail?: boolean): FileUrl;
+  download?(path: string, mimeType: string, fileName: string): Promise<boolean>;
   readText(path: string): Promise<string>;
   readTextSnapshot(path: string): Promise<{ text: string; revision: string; encoding: "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be" }>;
   writeTextSnapshot(path: string, text: string, snapshot: { revision: string; encoding: "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be" }): Promise<string>;
@@ -58,31 +62,37 @@ export function useNodeFiles() {
     });
   }
 
-  function useFileUrl(file: MaybeRefOrGetter<NodeMediaValue | undefined>, onError: (error: unknown) => void) {
+  function acquireFileUrl(value: NodeMediaValue, thumbnail = false): FileUrl {
+    const files = getWorkspaceFiles();
+    const shared = files.acquireUrl?.(value.url, value.mimeType, thumbnail);
+    if (shared) return shared;
+    const url = files.read(value.url).then(content => URL.createObjectURL(new Blob([content], { type: value.mimeType })));
+    return { url, release: () => { void url.then(value => URL.revokeObjectURL(value), () => {}); } };
+  }
+
+  function useFileUrl(file: MaybeRefOrGetter<NodeMediaValue | undefined>, onError: (error: unknown) => void, options?: { thumbnail?: boolean; imageSize?: Ref<ImageSize | undefined> }) {
     const fileUrl = ref("");
     const previewReady = useNodePreviewReady();
-    watch([() => toValue(file), previewReady], async ([value, ready], _previous, onCleanup) => {
+    const revision = ref(0);
+    watch([() => toValue(file), previewReady, revision], async ([value, ready], _previous, onCleanup) => {
       let cancelled = false;
-      let url = "";
-      let shared: ReturnType<NonNullable<WorkspaceFiles["acquireUrl"]>> | undefined;
+      let acquired: FileUrl | undefined;
+      let stop: (() => void) | undefined;
       onCleanup(() => {
         cancelled = true;
-        shared?.release();
-        if (url) URL.revokeObjectURL(url);
+        stop?.();
+        acquired?.release();
       });
       fileUrl.value = "";
+      if (options?.imageSize) options.imageSize.value = undefined;
       if (!value || !ready) return;
       try {
-        const files = getWorkspaceFiles();
-        shared = files.acquireUrl?.(value.url, value.mimeType);
-        if (shared) {
-          const sharedUrl = await shared.url;
-          if (!cancelled) fileUrl.value = sharedUrl;
-          return;
-        }
-        const content = await files.read(value.url);
-        if (cancelled) return;
-        fileUrl.value = url = URL.createObjectURL(new Blob([content], { type: value.mimeType }));
+        acquired = acquireFileUrl(value, options?.thumbnail);
+        if (acquired.invalidated) stop = watch(acquired.invalidated, () => revision.value++, { once: true });
+        const [url, size] = await Promise.all([acquired.url, options?.imageSize ? acquired.imageSize?.() : undefined]);
+        if (cancelled || acquired.invalidated?.value) return;
+        if (options?.imageSize) options.imageSize.value = size;
+        fileUrl.value = url;
       } catch (error) {
         if (!cancelled) onError(error);
       }
@@ -90,5 +100,5 @@ export function useNodeFiles() {
     return fileUrl;
   }
 
-  return { getWorkspaceFiles, uploadFile, removeNodeFiles, useFileUrl };
+  return { getWorkspaceFiles, uploadFile, removeNodeFiles, acquireFileUrl, useFileUrl };
 }

@@ -62,7 +62,7 @@ import { ElButton, ElInputNumber, ElMessage, ElPopover } from "element-plus";
 import { uploadNodeFile, useNodeFiles } from "@toonflow/nodes-scaffold/runtime";
 import { showNodeError } from "@toonflow/node-shared/showNodeError";
 
-const props = defineProps<{ src: string; disabled?: boolean; active: boolean }>();
+const props = defineProps<{ src: string; loadOriginal?: () => Promise<string>; sourceSize?: { width: number; height: number }; disabled?: boolean; active: boolean }>();
 const { node } = useNode();
 const { addNodes, findNode, getNodes, getSelectedNodes, nodeTypes, onNodeDragStart, onSelectionStart, onMoveStart } = useVueFlow();
 const files = useNodeFiles();
@@ -77,7 +77,10 @@ const completed = ref(0);
 const imageSize = ref({ width: 0, height: 0 });
 // ACT: 每轴最多 10 格（100 张），逐张编码上传以控制内存；更大批量需加入分批任务后再放开。
 const validGrid = computed(() => [rows.value, columns.value].every(value => Number.isInteger(value) && value >= 1 && value <= 10));
-const canSplit = computed(() => validGrid.value && rows.value * columns.value > 1 && imageSize.value.width >= columns.value && imageSize.value.height >= rows.value);
+const canSplit = computed(() => {
+  const size = props.sourceSize ?? imageSize.value;
+  return validGrid.value && rows.value * columns.value > 1 && size.width >= columns.value && size.height >= rows.value;
+});
 let splitController: AbortController | undefined;
 
 watch(() => props.src, () => {
@@ -124,7 +127,10 @@ async function splitImage() {
   let committed = false;
   try {
     workspace = files.getWorkspaceFiles();
-    source.src = props.src;
+    const url = props.loadOriginal ? await props.loadOriginal() : props.src;
+    if (!url) return;
+    controller.signal.throwIfAborted();
+    source.src = url;
     await source.decode();
     controller.signal.throwIfAborted();
     const { naturalWidth: width, naturalHeight: height } = source;

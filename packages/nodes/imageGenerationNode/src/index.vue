@@ -4,9 +4,8 @@
     v-model:bottomVisible="node.selected"
     :topVisible="node.selected"
     topWidth="max-content"
-    :downloadUrl="previewUrl"
-    :downloadName="outputFile?.url.split(/[\\/]/).at(-1)"
-    @fullscreen="previewVisible = true"
+    :downloadFile="previewUrl ? downloadOriginal : undefined"
+    @fullscreen="openPreview"
     :bottomWidth="660"
     :style="{ width: (previewUrl || inpaintGuideUrl) && imageWidth ? `${imageWidth + 18}px` : undefined }">
     <template v-if="editor?.mode" #top><div ref="paintToolbar" /></template>
@@ -28,13 +27,14 @@
         v-if="previewUrl"
         ref="editor"
         :src="previewUrl"
+        :loadOriginal="loadOriginal"
         :toolbarTarget="paintToolbar"
         :disabled="generating || deleting || uploading || lighting?.generating || multiAngle?.generating || panorama?.busy"
         alt="生成图片"
-        @load="resizeImage"
+        @load="resizeImage($event, imageSize)"
         @error="showNodeError('无法预览该图片', '图片预览失败')" />
       <div v-else-if="inpaintGuideUrl" class="inpaintGuide">
-        <img :src="inpaintGuideUrl" alt="局部重绘标注图" draggable="false" @load="resizeImage" @error="showNodeError('无法读取重绘标注图', '重绘标注读取失败')" />
+        <img :src="inpaintGuideUrl" alt="局部重绘标注图" draggable="false" @load="resizeImage($event, inpaintGuideSize)" @error="showNodeError('无法读取重绘标注图', '重绘标注读取失败')" />
         <span>红色标注为重绘区域</span>
       </div>
       <div v-else class="imageEmpty" role="img" aria-label="暂无生成图片">
@@ -45,7 +45,7 @@
       <div v-if="lightingVisible" ref="lightingTarget" />
       <div v-else-if="multiAngleVisible" ref="multiAngleTarget" />
       <el-card v-else class="promptCard" shadow="never" :bodyStyle="{ padding: '14px 16px 12px' }">
-        <el-button v-if="inpaintGuideUrl && editor?.mode !== 'inpaint'" class="inpaintInfo" text :icon="IconBrush" @click="inpaintPreviewVisible = true">查看重绘标注</el-button>
+        <el-button v-if="inpaintGuideUrl && editor?.mode !== 'inpaint'" class="inpaintInfo" text :icon="IconBrush" @click="openInpaintPreview">查看重绘标注</el-button>
         <referenceItem
           v-if="refList.length"
           v-model="refList"
@@ -97,14 +97,14 @@
       </el-card>
     </template>
   </nodeSkeleton>
-  <imageLighting v-if="lightingVisible" ref="lighting" :src="previewUrl" :source="outputFile" :target="lightingTarget" :disabled="generating || deleting || uploading || gridSplit?.splitting" @close="lightingVisible = false" />
-  <imageMultiAngle v-if="multiAngleVisible" ref="multiAngle" :src="previewUrl" :source="outputFile" :target="multiAngleTarget" :disabled="generating || deleting || uploading || gridSplit?.splitting" @close="multiAngleVisible = false" />
-  <imagePanorama ref="panorama" :src="previewUrl" :source="outputFile" :disabled="generating || deleting || uploading || editor?.busy || lighting?.generating || multiAngle?.generating || gridSplit?.splitting" @open="openPanorama" />
-  <imageGridSplit ref="gridSplit" :src="previewUrl" :disabled="generating || deleting || uploading || lighting?.generating || multiAngle?.generating || panorama?.busy" :active="node.selected" />
-  <el-image-viewer v-if="inpaintPreviewVisible && inpaintGuideUrl" :urlList="[inpaintGuideUrl]" teleported @close="inpaintPreviewVisible = false" />
+  <imageLighting v-if="lightingVisible && originalUrl" ref="lighting" :src="originalUrl" :source="outputFile" :target="lightingTarget" :disabled="generating || deleting || uploading || gridSplit?.splitting" @close="lightingVisible = false" />
+  <imageMultiAngle v-if="multiAngleVisible && originalUrl" ref="multiAngle" :src="originalUrl" :source="outputFile" :target="multiAngleTarget" :disabled="generating || deleting || uploading || gridSplit?.splitting" @close="multiAngleVisible = false" />
+  <imagePanorama ref="panorama" :src="previewUrl" :loadOriginal="loadOriginal" :source="outputFile" :disabled="generating || deleting || uploading || editor?.busy || lighting?.generating || multiAngle?.generating || gridSplit?.splitting" @open="openPanorama" />
+  <imageGridSplit ref="gridSplit" :src="previewUrl" :sourceSize="imageSize" :loadOriginal="loadOriginal" :disabled="generating || deleting || uploading || lighting?.generating || multiAngle?.generating || panorama?.busy" :active="node.selected" />
+  <el-image-viewer v-if="inpaintPreviewVisible && inpaintOriginalUrl" :urlList="[inpaintOriginalUrl]" teleported @close="inpaintPreviewVisible = false" />
   <el-image-viewer
-    v-if="previewVisible && previewUrl"
-    :urlList="[previewUrl]"
+    v-if="previewVisible && originalUrl"
+    :urlList="[originalUrl]"
     teleported
     @close="previewVisible = false" />
 </template>
@@ -117,6 +117,7 @@ import { nodeSkeleton, nodeTools, useNode, z, type NodeMediaModel, type NodeImag
 import { groupNodeModels } from "@toonflow/node-shared/groupNodeModels";
 import { showNodeError } from "@toonflow/node-shared/showNodeError";
 import { useNodeGeneration } from "@toonflow/node-shared/useNodeGeneration";
+import { useImagePreview } from "@toonflow/node-shared/useImagePreview";
 import { useNodeReferences } from "@toonflow/node-shared/useNodeReferences";
 import promptInput from "@toonflow/node-shared/promptInput";
 import referenceItem from "@toonflow/node-shared/referenceItem";
@@ -230,14 +231,24 @@ const priceInput = computed(() => {
   return inpaint ? buildInpaintRequest(input, inpaint) : input;
 });
 const outputFile = computed(() => outputs.value.image?.dataType === "IMAGE" ? outputs.value.image.value : undefined);
-const inpaintGuideUrl = files.useFileUrl(
+const {
+  previewUrl: inpaintGuideUrl,
+  imageSize: inpaintGuideSize,
+  originalUrl: inpaintOriginalUrl,
+  loadOriginal: loadInpaintOriginal,
+} = useImagePreview(
   () => data.value.inpaint?.guide ? { url: data.value.inpaint.guide, mimeType: "image/png" } : undefined,
   error => showNodeError(error, "重绘标注读取失败")
 );
-const previewUrl = files.useFileUrl(
+const { previewUrl, imageSize, originalUrl, loadOriginal, downloadOriginal } = useImagePreview(
   outputFile,
   (error) => showNodeError(error, "图片读取失败")
 );
+watch(originalUrl, url => {
+  if (url) return;
+  previewVisible.value = lightingVisible.value = multiAngleVisible.value = false;
+});
+watch(inpaintOriginalUrl, url => { if (!url) inpaintPreviewVisible.value = false; });
 
 onMounted(() => {
   window.addEventListener("toonflow:plugin-installed", refreshProviderModels);
@@ -369,10 +380,12 @@ nodeEvent.on("delete", async () => {
   }
 });
 
-async function resizeImage(event: Event) {
+async function resizeImage(event: Event, size?: { width: number; height: number }) {
   const image = event.currentTarget as HTMLImageElement;
-  if (!image.naturalWidth || !image.naturalHeight) return;
-  imageWidth.value = (240 * image.naturalWidth) / image.naturalHeight;
+  const width = size?.width ?? image.naturalWidth;
+  const height = size?.height ?? image.naturalHeight;
+  if (!width || !height) return;
+  imageWidth.value = 240 * width / height;
   await nextTick();
   updateNodeInternals();
 }
@@ -383,18 +396,26 @@ function openPanorama() {
   multiAngleVisible.value = false;
 }
 
-function openLighting() {
+async function openPreview() {
+  previewVisible.value = !!await loadOriginal();
+}
+
+async function openInpaintPreview() {
+  inpaintPreviewVisible.value = !!await loadInpaintOriginal();
+}
+
+async function openLighting() {
   if (generating.value || deleting.value || uploading.value || editor.value?.busy || lighting.value?.generating || multiAngle.value?.generating || panorama.value?.busy || gridSplit.value?.splitting || !previewUrl.value) return;
   editor.value?.cancel();
   multiAngleVisible.value = false;
-  lightingVisible.value = true;
+  lightingVisible.value = !!await loadOriginal();
 }
 
-function openMultiAngle() {
+async function openMultiAngle() {
   if (generating.value || deleting.value || uploading.value || editor.value?.busy || lighting.value?.generating || multiAngle.value?.generating || panorama.value?.busy || gridSplit.value?.splitting || !previewUrl.value) return;
   editor.value?.cancel();
   lightingVisible.value = false;
-  multiAngleVisible.value = true;
+  multiAngleVisible.value = !!await loadOriginal();
 }
 
 function startEditor(mode: "inpaint" | "mark") {

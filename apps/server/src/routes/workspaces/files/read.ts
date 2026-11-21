@@ -1,6 +1,7 @@
 import { lstat, readFile } from "@toonflow/file";
 import { createHash } from "node:crypto";
 import { sendFile } from "@/utils/fileHttp";
+import { sendStaticImage } from "@/utils/imageHttp";
 import { Router } from "express";
 import { z } from "zod";
 import u from "@/utils";
@@ -9,7 +10,7 @@ import { success } from "@/lib/responseFormat";
 
 const router = Router();
 
-export default router.get("/", validateFields({ directory: z.string().min(1).max(4096), path: z.string().max(4096), snapshot: z.enum(["true"]).optional(), maxBytes: z.coerce.number().int().positive().max(20 * 1024 * 1024).optional() }, "query"), async (req, res, next) => {
+export default router.get("/", validateFields({ directory: z.string().min(1).max(4096), path: z.string().max(4096), snapshot: z.enum(["true"]).optional(), maxBytes: z.coerce.number().int().positive().max(20 * 1024 * 1024).optional(), thumbnail: z.literal("true").optional() }, "query"), async (req, res, next) => {
   const { path } = await u.workspaceFile.resolveWorkspaceFile(req, req.query.directory as string, req.query.path as string);
   const file = await lstat(path);
   if (!file.isFile()) throw Object.assign(new Error("只能读取文件"), { status: 400 });
@@ -36,5 +37,6 @@ export default router.get("/", validateFields({ directory: z.string().min(1).max
     res.json(success({ text, encoding, revision: createHash("sha256").update(bytes).digest("hex") }));
     return;
   }
+  if (await sendStaticImage(res, path, file.size, req.query.thumbnail === "true")) return;
   await sendFile(res, path, { dotfiles: "allow" }, err => { if (err) next(err); });
 });

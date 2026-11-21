@@ -10,7 +10,7 @@
         <template #default="{ data, node }">
           <div class="assetEntry" :title="data.name" :draggable="data.type === 'file'" @dragstart.stop="startAssetDrag($event, data)" @dblclick.stop="openPreview(data)" @contextmenu="openItemMenu($event, data)">
             <span v-if="data.type === 'directory'" class="fileIcon"><component :is="node.expanded && !node.isLeaf ? IconFolderOpen : IconFolder" :size="18" aria-hidden="true" /></span>
-            <el-image v-else-if="mediaKind(data) === 'image'" class="assetThumbnail" :src="assetUrl(data.path)" fit="cover" loading="lazy" draggable="false" @click.stop="openPreview(data)">
+            <el-image v-else-if="mediaKind(data) === 'image'" class="assetThumbnail" :src="assetUrl(data.path, true)" fit="cover" loading="lazy" draggable="false" @click.stop="openPreview(data)">
               <template #error><icon-photo :size="18" /></template>
             </el-image>
             <span v-else class="fileIcon">
@@ -121,7 +121,8 @@ const previewError = ref("");
 let loadRequest = 0;
 onBeforeUnmount(() => { loadRequest++; });
 
-function assetUrl(path: string) {
+function assetUrl(path: string, thumbnail = false) {
+  if (thumbnail) return "/api/assets/read?path=" + encodeURIComponent(path) + "&thumbnail=true";
   return `/api/assets/read?path=${encodeURIComponent(path)}`;
 }
 

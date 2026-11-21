@@ -1,9 +1,10 @@
 import axios from "axios";
 import { isMobile, isRemoteConnection } from "./platform";
-import { toValue, type MaybeRefOrGetter } from "vue";
+import { shallowRef, toValue, type MaybeRefOrGetter, type ShallowRef } from "vue";
 import { useWorkspaceStore } from "@/stores/workspace";
 import { registerApiLanguage } from "@/lib/i18n";
-import { registerApiIdentity } from "@/lib/auth";
+import { authState, registerApiIdentity } from "@/lib/auth";
+import saveFile from "@/lib/saveFile";
 
 type WorkspaceEntry = { name: string; path: string; type: "file" | "directory" };
 export type TextSnapshot = { text: string; revision: string; encoding: "utf-8" | "utf-8-bom" | "utf-16le" | "utf-16be" };
@@ -14,7 +15,15 @@ export function isStaleWorkspaceFile(error: unknown) {
 const client = axios.create({ baseURL: "/api/workspaces/files", headers: { "x-toonflow-workspace": "1" } });
 registerApiLanguage(client);
 registerApiIdentity(client);
-const fileUrls = new Map<string, { directory: string; path: string; url: Promise<string>; users: number }>();
+const fileUrls = new Map<string, {
+  directory: string;
+  path: string;
+  url: Promise<string>;
+  blob: Promise<Blob>;
+  imageSize(): Promise<{ width: number; height: number } | undefined>;
+  invalidated: ShallowRef<boolean>;
+  users: number;
+}>();
 
 function cachePath(path: string) {
   return path.replaceAll("\\", "/").split("/").filter(part => part && part !== ".").join("/").toLowerCase();
@@ -26,7 +35,10 @@ function invalidateUrls(directory: string, path: string) {
   path = cachePath(path);
   for (const [key, entry] of fileUrls) {
     const entryPath = cachePath(entry.path);
-    if (cachePath(entry.directory) === directory && (entryPath === path || entryPath.startsWith(`${path}/`))) fileUrls.delete(key);
+    if (cachePath(entry.directory) === directory && (entryPath === path || entryPath.startsWith(`${path}/`))) {
+      fileUrls.delete(key);
+      entry.invalidated.value = true;
+    }
   }
 }
 
@@ -53,14 +65,19 @@ export default function useWorkspaceFiles(directory?: MaybeRefOrGetter<string | 
     return data.data;
   }
 
-  function acquireUrl(path: string, mimeType?: string) {
-    const directory = getDirectory();
-    const key = JSON.stringify([directory, path, mimeType]);
+  function acquireWorkspaceUrl(directory: string, path: string, mimeType?: string, thumbnail = false) {
+    const key = JSON.stringify([authState.value.user?.id, directory, path, mimeType, thumbnail]);
     let entry = fileUrls.get(key);
     if (!entry) {
-      const url = client.get<Blob>("/read", { params: { directory, path }, responseType: "blob" })
-        .then(({ data }) => URL.createObjectURL(mimeType ? new Blob([data], { type: mimeType }) : data));
-      entry = { directory, path, url, users: 0 };
+      const response = client.get<Blob>("/read", { params: { directory, path, thumbnail: thumbnail || undefined }, responseType: "blob" });
+      const blob = response.then(({ data }) => mimeType && (!thumbnail || !data.type.startsWith("image/"))
+        ? new Blob([data], { type: mimeType }) : data);
+      const url = blob.then(data => URL.createObjectURL(data));
+      const imageSize = () => response.then(({ headers }) => {
+        const match = /^([1-9]\d*)x([1-9]\d*)$/.exec(String(headers["x-toonflow-image-size"] ?? ""));
+        if (match) return { width: Number(match[1]), height: Number(match[2]) };
+      });
+      entry = { directory, path, url, blob, imageSize, invalidated: shallowRef(false), users: 0 };
       fileUrls.set(key, entry);
       const current = entry;
       void url.catch(() => { if (fileUrls.get(key) === current) fileUrls.delete(key); });
@@ -70,6 +87,9 @@ export default function useWorkspaceFiles(directory?: MaybeRefOrGetter<string | 
     let released = false;
     return {
       url: current.url,
+      blob: current.blob,
+      imageSize: current.imageSize,
+      invalidated: current.invalidated,
       release() {
         if (released) return;
         released = true;
@@ -79,6 +99,19 @@ export default function useWorkspaceFiles(directory?: MaybeRefOrGetter<string | 
         void current.url.then(url => URL.revokeObjectURL(url), () => {});
       },
     };
+  }
+
+  function acquireUrl(path: string, mimeType?: string, thumbnail = false) {
+    return acquireWorkspaceUrl(getDirectory(), path, mimeType, thumbnail);
+  }
+
+  function download(path: string, mimeType: string, fileName: string) {
+    const directory = getDirectory();
+    return saveFile(async () => {
+      const file = acquireWorkspaceUrl(directory, path, mimeType);
+      try { return await file.blob; }
+      finally { file.release(); }
+    }, fileName);
   }
 
   async function readText(path: string, maxBytes?: number, signal?: AbortSignal) {
@@ -159,5 +192,5 @@ export default function useWorkspaceFiles(directory?: MaybeRefOrGetter<string | 
   }
 
   // ACT: 当前目录逐次读取；跨 await 或防抖的操作传入目录字符串，固定本次目标。
-  return { list, read, importImage, acquireUrl, readText, readJson, readTextSnapshot, writeTextSnapshot, write, writeJson, rename, copy, reveal, remove, mkdir };
+  return { list, read, importImage, acquireUrl, download, readText, readJson, readTextSnapshot, writeTextSnapshot, write, writeJson, rename, copy, reveal, remove, mkdir };
 }

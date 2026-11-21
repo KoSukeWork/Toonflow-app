@@ -30,7 +30,7 @@
       </div>
     </template>
     <div class="panoramaPanel nodrag nopan nowheel" @pointerdown.stop @mousedown.stop @dblclick.stop @wheel.stop @keydown.stop>
-      <imagePanoramaPreview v-if="visible" ref="previewStage" :src="src" :mode="mode" :disabled="disabled || saving" @capture="saveCapture" />
+      <imagePanoramaPreview v-if="visible" ref="previewStage" :src="previewSrc" :mode="mode" :disabled="disabled || saving" @capture="saveCapture" />
     </div>
   </el-dialog>
 </template>
@@ -47,17 +47,18 @@ import { usePanoramaCapture } from "../usePanoramaCapture";
 import { useImageVariationNode } from "../useImageVariationNode";
 import imagePanoramaPreview from "./imagePanoramaPreview.vue";
 
-const props = defineProps<{ src: string; source?: NodeMediaValue; disabled?: boolean }>();
+const props = defineProps<{ src: string; loadOriginal?: () => Promise<string>; source?: NodeMediaValue; disabled?: boolean }>();
 const emit = defineEmits<{ open: [] }>();
 const { node } = useNode();
 const dropdown = ref<InstanceType<typeof ElDropdown>>();
 const trigger = ref<HTMLElement>();
 const visible = ref(false);
+const previewSrc = ref("");
 const mode = ref<PanoramaMode>("sphere");
 const creating = ref(false);
 const createVariation = useImageVariationNode();
 const previewStage = ref<InstanceType<typeof imagePanoramaPreview>>();
-const { saving, saveCapture } = usePanoramaCapture(() => props.src);
+const { saving, saveCapture } = usePanoramaCapture(() => previewSrc.value);
 const busy = computed(() => creating.value || saving.value || !!previewStage.value?.capturing);
 
 defineExpose({ open, busy, visible });
@@ -76,7 +77,15 @@ async function selectAction(command: string) {
   emit("open");
   mode.value = command.endsWith("Sphere") ? "sphere" : "cylinder";
   if (command.startsWith("preview")) {
-    visible.value = true;
+    const source = props.src;
+    creating.value = true;
+    try {
+      const url = props.loadOriginal ? await props.loadOriginal() : source;
+      if (url && source === props.src && !props.disabled) {
+        previewSrc.value = url;
+        visible.value = true;
+      }
+    } finally { creating.value = false; }
     return;
   }
   if (!props.source) return;

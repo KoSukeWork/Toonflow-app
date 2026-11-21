@@ -11,6 +11,7 @@
     "./showNodeError": "./src/showNodeError.ts",
     "./useNodeReferences": "./src/useNodeReferences.ts",
     "./useNodeGeneration": "./src/useNodeGeneration.ts",
+    "./useImagePreview": "./src/useImagePreview.ts",
     "./groupNodeModels": "./src/groupNodeModels.ts"
   },
   "scripts": {
