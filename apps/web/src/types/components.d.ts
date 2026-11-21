@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    About: typeof import('./../components/settings/panels/about.vue')['default']
     Agent: typeof import('./../components/agent/index.vue')['default']
     AttachmentList: typeof import('./../components/agent/attachmentList.vue')['default']
     AttachmentPreview: typeof import('./../components/agent/attachmentPreview.vue')['default']
@@ -78,7 +77,6 @@ declare module 'vue' {
     FfmpegRequired: typeof import('./../components/settings/ffmpegRequired.vue')['default']
     General: typeof import('./../components/settings/panels/general/index.vue')['default']
     IconArrowGuide: typeof import('@tabler/icons-vue')['IconArrowGuide']
-    IconArrowRight: typeof import('@tabler/icons-vue')['IconArrowRight']
     IconBorderRadius: typeof import('@tabler/icons-vue')['IconBorderRadius']
     IconExternalLink: typeof import('@tabler/icons-vue')['IconExternalLink']
     IconFolders: typeof import('@tabler/icons-vue')['IconFolders']
@@ -88,7 +86,6 @@ declare module 'vue' {
     IconMovie: typeof import('@tabler/icons-vue')['IconMovie']
     IconSitemap: typeof import('@tabler/icons-vue')['IconSitemap']
     IconTextSize: typeof import('@tabler/icons-vue')['IconTextSize']
-    IconX: typeof import('@tabler/icons-vue')['IconX']
     KeyInput: typeof import('./../components/settings/panels/general/keyInput.vue')['default']
     LanguageModel: typeof import('./../components/settings/panels/languageModel/index.vue')['default']
     LanguageSelect: typeof import('./../components/languageSelect.vue')['default']
@@ -114,7 +111,6 @@ declare module 'vue' {
     TfRechargeDialog: typeof import('./../components/settings/tfRechargeDialog.vue')['default']
     ToolMessage: typeof import('./../components/agent/toolMessage.vue')['default']
     Ui: typeof import('./../components/settings/panels/ui.vue')['default']
-    UpdateBox: typeof import('./../components/updateBox.vue')['default']
   }
   export interface GlobalDirectives {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

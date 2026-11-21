@@ -1,30 +1,4 @@
 {
-  "更新未成功": [
-    "apps/web/src/App.vue"
-  ],
-  "当前运行版本": [
-    "apps/web/src/App.vue"
-  ],
-  "未知版本": [
-    "apps/web/src/App.vue"
-  ],
-  "本次更新目标": [
-    "apps/web/src/App.vue"
-  ],
-  "请前往 GitHub 最新发布页，选择适合当前系统的完整安装包，关闭客户端后重新安装。": [
-    "apps/web/src/App.vue",
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "稍后": [
-    "apps/web/src/App.vue"
-  ],
-  "前往下载页": [
-    "apps/web/src/App.vue",
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "更新说明的展示记录保存失败，下次启动时可能再次显示。": [
-    "apps/web/src/App.vue"
-  ],
   "预览 {0}": [
     "apps/web/src/components/agent/attachmentPreview.vue",
     "apps/web/src/components/agent/conversation.vue",
@@ -548,7 +522,6 @@
   "关闭": [
     "apps/web/src/components/agent/menu.vue",
     "apps/web/src/components/languageSelect.vue",
-    "apps/web/src/components/settings/panels/about.vue",
     "apps/web/src/components/settings/panels/pluginMarket/a2aSettingsDialog.vue",
     "apps/web/src/components/settings/panels/pluginMarket/agentEditorDialog.vue",
     "apps/web/src/components/settings/panels/pluginMarket/index.vue",
@@ -917,9 +890,6 @@
   "设置分类": [
     "apps/web/src/components/settings/index.vue"
   ],
-  "{0}，有新版本可用": [
-    "apps/web/src/components/settings/index.vue"
-  ],
   "界面设置": [
     "apps/web/src/components/settings/index.vue"
   ],
@@ -951,9 +921,6 @@
   "开发者选项": [
     "apps/web/src/components/settings/index.vue"
   ],
-  "关于": [
-    "apps/web/src/components/settings/index.vue"
-  ],
   "请选择非空且不超过 20 MB 的插件文件": [
     "apps/web/src/components/settings/installPluginFile.ts"
   ],
@@ -965,157 +932,8 @@
   "安装接口未返回有效的插件名称": [
     "apps/web/src/components/settings/installPluginFile.ts"
   ],
-  "版本更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "前往 GitHub 更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "更新源": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "官方源": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "自定义源": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "查看更新失败原因": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "更新已就绪": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "查看更新进度": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "检查更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "构建标识": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "上次更新未成功": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "GitHub 仓库：HBAI-Ltd/Toonflow-app": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "GitHub 仓库": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "官方中转平台 TF-Router": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "微信交流群": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "微信扫码加入交流群": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "展示二维码": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "Toonflow 交流群二维码": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
   "Toonflow 是为爱发电的开源项目。欢迎文明交流、友善反馈；回复可能需要一些时间，请避免责问或命令式沟通，感谢你的理解与尊重。": [
-    "apps/web/src/components/settings/panels/about.vue",
     "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "赞助商": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "排名不分先后": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "微信扫码洽谈商务合作": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "成为赞助商": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "Toonflow 商务合作二维码": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "查看 {0} 详情": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在解压并校验更新包": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "下载进度": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "当前版本": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "最新版本": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "重新读取状态": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "重启并更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "下载更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "更新未完成": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在检查更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在读取更新状态": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在重启并更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在准备更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "更新已准备完成": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "发现新版本": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "暂无更新": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在获取最新版本信息…": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在确认客户端的更新状态，请稍候…": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "客户端即将关闭，更新完成后会自动重新打开。": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "正在下载并校验更新包，可以关闭此弹窗继续使用。": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "点击“重启并更新”安装新版本，请先完成正在进行的任务。": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "当前已是最新版本 v{0}": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "有新的版本可用，下载完成后可重启更新。": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "当前客户端不支持应用内更新，请下载安装包。": [
-    "apps/web/src/components/settings/panels/about.vue",
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "请在桌面客户端中检查更新。": [
-    "apps/web/src/components/settings/panels/about.vue"
-  ],
-  "开发版本不提供更新检查，请使用正式桌面客户端。": [
-    "apps/web/src/components/settings/panels/about.vue"
   ],
   "开发者工具": [
     "apps/web/src/components/settings/panels/developer/index.vue"
@@ -1141,15 +959,6 @@
   "重置并打开引导页": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
-  "更新说明": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "打开当前版本的更新说明弹窗。": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "查看更新说明": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
   "供应商开发工具": [
     "apps/web/src/components/settings/panels/developer/index.vue",
     "apps/web/src/components/settings/panels/developer/providerDebugDialog.vue"
@@ -1168,15 +977,6 @@
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
   "编辑提示词": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "自定义更新源": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "填写更新清单和安装包所在的目录地址，保存后可在关于页选择。": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "自定义更新源目录地址": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
   "手动安装插件": [
@@ -1252,9 +1052,6 @@
   "{0} 的值": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
-  "未提供": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
   "确认进入开发者选项": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
@@ -1262,24 +1059,6 @@
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
   "确认并继续": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "未能读取当前版本和构建代码，请重试。": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "读取版本信息失败": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "请输入有效的 HTTP(S) 目录地址": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "请输入不含账号、查询参数或锚点的 HTTP(S) 目录地址": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "自定义更新源已保存": [
-    "apps/web/src/components/settings/panels/developer/index.vue"
-  ],
-  "保存更新源失败": [
     "apps/web/src/components/settings/panels/developer/index.vue"
   ],
   "重置引导失败，请重试": [
@@ -3407,23 +3186,7 @@
   "请选择已配置的文本模型": [
     "apps/web/src/components/singleAgentDialog.vue"
   ],
-  "构建代码": [
-    "apps/web/src/components/updateBox.vue"
-  ],
-  "关闭更新说明": [
-    "apps/web/src/components/updateBox.vue"
-  ],
-  "构建 {0} 的色块图": [
-    "apps/web/src/components/updateBox.vue"
-  ],
-  "更新内容": [
-    "apps/web/src/components/updateBox.vue"
-  ],
-  "Markdown 更新说明": [
-    "apps/web/src/components/updateBox.vue"
-  ],
   "开始使用": [
-    "apps/web/src/components/updateBox.vue",
     "apps/web/src/pages/hello/index.vue"
   ],
   "成组": [
@@ -3803,9 +3566,6 @@
   "余额响应格式不正确": [
     "apps/web/src/lib/tf.ts"
   ],
-  "赞助商响应格式不正确": [
-    "apps/web/src/lib/tf.ts"
-  ],
   "订单号不能为空": [
     "apps/web/src/lib/tf.ts"
   ],
@@ -3943,10 +3703,6 @@
   ],
   "自动配置失败，请重试": [
     "apps/web/src/pages/hello/index.vue"
-  ],
-  "设置，有新版本可用": [
-    "apps/web/src/pages/home/index.vue",
-    "apps/web/src/pages/workspace/components/workspaceMenu.vue"
   ],
   "点个 Star 支持一下": [
     "apps/web/src/pages/home/index.vue"
@@ -4461,30 +4217,6 @@
     "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
   ],
   "适合屏幕": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "帮助": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "使用教程": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "Toonflow 需求/BUG反馈表": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "汇报 BUG": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "加入交流群": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "商务合作": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "{0}二维码": [
-    "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
-  ],
-  "此联系方式仅用于商务合作接洽，不提供问题答疑。使用问题欢迎在交流群交流，需求与 BUG 可通过反馈表提交。感谢理解。": [
     "apps/web/src/pages/workspace/panels/canvas/components/canvasControls.vue"
   ],
   "整理画布失败": [
@@ -5355,12 +5087,6 @@
   "文档工作区已关闭": [
     "apps/web/src/pages/workspace/panels/document/index.vue"
   ],
-  "暂时无法确认更新结果，请稍后重新读取状态，或重新打开客户端。": [
-    "apps/web/src/stores/desktopUpdate.ts"
-  ],
-  "连接其他设备时无法更新本机客户端，请断开并独立运行后重试。": [
-    "apps/web/src/stores/desktopUpdate.ts"
-  ],
   "读取设置失败": [
     "apps/web/src/stores/settings.ts"
   ],
@@ -6130,12 +5856,6 @@
   "系统提示词不能超过 {0} 个字符": [
     "apps/server/src/routes/settings/save.ts"
   ],
-  "自定义更新源必须是不含账号、查询参数或锚点的 HTTP(S) 地址": [
-    "apps/server/src/routes/settings/save.ts"
-  ],
-  "选择自定义更新源前，请先填写有效地址": [
-    "apps/server/src/routes/settings/save.ts"
-  ],
   "设置已保存": [
     "apps/server/src/routes/settings/save.ts"
   ],
@@ -6328,21 +6048,6 @@
   "素材查询及游标关闭失败": [
     "apps/server/src/utils/assets/index.ts"
   ],
-  "清理无效更新核验记录失败：": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "清理已取消更新核验记录失败：": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "清理已完成更新核验记录失败：": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "更新重启后的版本或构建号与目标不一致，请下载完整安装包重新安装。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "保存更新核验失败信息失败：": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
   "请选择 .ts 供应商文件": [
     "apps/server/src/utils/desktop/index.ts"
   ],
@@ -6355,24 +6060,6 @@
   "供应商文件不能超过 2 MB": [
     "apps/server/src/utils/desktop/index.ts",
     "apps/server/src/utils/media/provider.ts"
-  ],
-  "更新操作正在执行，请稍后再试。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "更新源已切换，请重新检查更新。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "请先检查并确认有可用更新。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "更新包尚未准备完成，请重试。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "请先下载更新。": [
-    "apps/server/src/utils/desktop/index.ts"
-  ],
-  "更新包缺少目标版本或构建号，请重新下载。": [
-    "apps/server/src/utils/desktop/index.ts"
   ],
   "当前操作需要 FFmpeg，请在插件市场下载安装或配置可用版本后重试。": [
     "apps/server/src/utils/ffmpeg/index.ts"
@@ -7614,9 +7301,6 @@
   "桌面启动失败：": [
     "apps/desktop/src/index.ts"
   ],
-  "更新启动结果写入失败：": [
-    "apps/desktop/src/index.ts"
-  ],
   "安装链接不能超过 8192 个字符": [
     "apps/desktop/src/protocol.ts"
   ],
@@ -7706,102 +7390,6 @@
   ],
   "保存文件失败：{0}": [
     "apps/desktop/src/saveFile.ts"
-  ],
-  "更新事务标识无效": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新缓存目录不能是链接": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "桌面安装标识无效，请重新安装": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "本次更新失败，已保留旧版本": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新已取消，请重新准备更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新助手就绪状态已丢失，请重新准备更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新助手就绪状态无效或已过期，请重新准备更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新助手已退出，请重新准备更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "旧版本文件暂时无法清理：": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新后版本核验失败，已保留旧版本备份，请使用完整安装包更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "上次更新失败，已保留旧版本": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新地址无效": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "正在准备更新，请稍候": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "检查更新失败：HTTP {0}": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新清单过大": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新清单不匹配当前应用": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新源版本 {0} 早于当前版本 {1}，已阻止降级": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新包安装标识不匹配": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "下载更新失败：HTTP {0}": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "下载更新失败：响应为空": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "已有更新任务正在执行": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "暂无可安装的更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "缺少旧版本更新缓存": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新补丁链重复": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "增量更新不可用，改用完整更新包：": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新包版本与清单不一致": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新包路径不能是链接或目录": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "全量": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "请先下载当前版本的更新包": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新重启已取消": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新助手未就绪，已取消本次更新": [
-    "apps/desktop/src/update/windowsUpdater.ts"
-  ],
-  "更新交接已超时，已保留旧版本，请重试": [
-    "apps/desktop/src/update/windowsUpdater.ts"
   ],
   "导出内容必须是文件数据": [
     "apps/mobile/src/server.ts"

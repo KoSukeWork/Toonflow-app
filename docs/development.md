@@ -210,15 +210,13 @@ git push --no-follow-tags origin refs/tags/v2.0.0:refs/tags/v2.0.0
 
 工作流分别在 Windows、Intel Mac 和 Apple Silicon 运行器上构建，全部成功后统一上传到对应 GitHub Release：
 
-| 平台 | 安装包 | 更新文件 |
-| --- | --- | --- |
-| Windows x64 | `toonflow-<版本号>-Setup.exe` | `stable-win-x64-*` |
-| macOS Intel | DMG | `stable-macos-x64-*` |
-| macOS Apple Silicon | DMG | `stable-macos-arm64-*` |
+| 平台 | 安装包 |
+| --- | --- |
+| Windows x64 | `toonflow-<版本号>-Setup.exe` |
+| macOS Intel 和 Apple Silicon | 对应架构的 DMG |
+| Android ARM64 | APK |
 
-各平台包含完整更新包 `.tar.zst`、更新清单 `*-update.json`，以及**GitHub 最新发布版 → 当前版本**的 `<平台前缀>-<旧 hash>.patch`。首次发布找不到该平台清单（HTTP 404）时只生成安装包和完整更新包；其他网络错误、无效清单或缺失 patch 会中止构建。版本号必须高于更新源中的上一版。
-
-构建固定使用 GitHub Releases 的 `releases/latest/download` 读取上一版清单及完整包，用于生成补丁。GitHub Actions 使用当前工作流仓库（`GITHUB_SERVER_URL` / `GITHUB_REPOSITORY`），本机构建默认使用 `HBAI-Ltd/Toonflow-app`。此地址写入 SDK 的构建配置，不受客户端设置影响；客户端运行时在“设置 → 关于”选择更新源，默认使用官方源 `https://api.toonflow.net/version/desktopUpdates`，也可切换到 GitHub Releases。开发者选项可保存一个自定义更新文件目录地址，保存后会出现在“关于”的更新源下拉框。工作流会上传文件到 GitHub Release，官方更新服务的文件仍需按下方命令单独同步。
+正式发布只向 GitHub Release 上传安装包。已有客户端通过完整安装包手动升级。
 
 [Debug 工作流](../.github/workflows/debug.yml) 可单独选择平台或全部平台，产物保留 7 天，不创建 Release。默认只打完整包，勾选 `generatePatch` 可验证增量构建。CI 构建和归档检查不等于已验证真实安装、GUI 启动或 macOS Gatekeeper。
 
@@ -260,25 +258,11 @@ ARM 的 CI 构建强制同时签名与公证，本机构建默认不启用；Int
 
 若凭据准备步骤提示“未找到唯一有效的 Developer ID Application 身份”，查看该步骤后续输出的证书类别、有效期和系统诊断。`Apple Development`、`Apple Distribution`、`Developer ID Installer` 均不能替代当前所需的 `Developer ID Application`。若类别正确，仍需检查是否含匹配私钥、是否过期，以及证书信任链；成功导入 P12 不等于存在有效的代码签名身份。诊断不会打印私钥、密码或证书姓名。
 
-**本机打包与独立更新服务**
+**本机打包**
 
-独立更新服务与业务 Server 分开运行，默认地址为 `http://127.0.0.1:8091`。其配置、部署与发布规则见 [更新服务说明](../apps/updateServer/readme.md)。
+在仓库根目录运行 `bun run package:desktop` 生成当前平台的完整安装包。Windows 卸载时默认保留用户数据，勾选“同时删除用户数据”才会清理。
 
-```sh
-bun run start:updateServer
-
-# 本机仅构建当前系统与架构；自动判断是否已有上一版
-bun run release:desktop 2.0.0 --auto
-bun run publish:update build/desktop/releases/2.0.0
-
-# 服务器保留上一版时，构建并发布下一版本
-bun run release:desktop 2.0.1
-bun run publish:update build/desktop/releases/2.0.1
-```
-
-Mac 发布目录增加 `macX64/` 或 `macArm64/`，例如 `build/desktop/releases/macArm64/2.0.1`。所有 release 模式都会生成安装包；`--auto` 自动判断基线，不带选项要求已有上一版，`--initial` 跳过基线检查且不生成 patch。同一平台、架构和版本不能重复生成快照。普通 `build:desktop`、`package:desktop` 不访问更新服务器。
-
-桌面用户可在“设置 → 关于”检查更新、下载并重启应用。Windows 更新交换程序目录，保留 `data/` 和 `WebView2/`；卸载时也默认保留这些数据，选择“同时删除用户数据”才会一并清理。
+独立更新服务供维护旧版本使用，相关说明见 [更新服务说明](../apps/updateServer/readme.md)。
 
 内置节点与工具按构建 hash 同步：升级或降级后首次启动会替换同名内置插件；Windows 同版本重装也会触发同步。普通重启不重复覆盖。技能和提供方按首次初始化规则处理，保留已有文件；第三方插件和用户素材不随内置节点、工具的同步被覆盖。
 

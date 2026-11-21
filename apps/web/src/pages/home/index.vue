@@ -3,9 +3,7 @@
     <bg class="pageBackground" />
     <el-header class="pageHeader">
       <div class="headerActions">
-        <el-badge isDot :hidden="!hasDesktopUpdate">
-          <el-button round size="large" :icon="IconSettings" :aria-label="hasDesktopUpdate ? '设置，有新版本可用' : '设置'" @click="settingsVisible = true">设置</el-button>
-        </el-badge>
+        <el-button round size="large" :icon="IconSettings" @click="settingsVisible = true">设置</el-button>
         <el-button v-if="!authState.enabled" round size="large" :type="deviceHubEnabled ? 'success' : undefined" :plain="deviceHubEnabled" :icon="deviceHubEnabled || mobileConnection.mode === 'remote' ? IconDeviceDesktop : IconQrcode" @click="mobileConnectVisible = true">{{ mobileConnectionLabel }}</el-button>
         <el-button v-if="authState.user?.role === 'admin'" round size="large" @click="accountsVisible = true">账号和项目管理</el-button>
         <el-button v-if="authState.user" round size="large" :loading="switchingAccount" :disabled="creating || opening" @click="changeAccount">{{ authState.user.username }} · 切换账号</el-button>
@@ -120,7 +118,6 @@ import { createPastedTextFile, readTextAttachment } from "@/components/agent/tex
 import type { AgentAttachment } from "@/components/agent/types";
 import logoUrl from "@toonflow/assets/logo.svg";
 import { useWorkspaceStore, type Project } from "@/stores/workspace";
-import { hasDesktopUpdate } from "@/stores/desktopUpdate";
 import { deviceHubEnabled, mobileConnection, mobileConnectionLabel } from "@/lib/mobile";
 import useWorkspaceFiles from "@/lib/workspaceFiles";
 import settings from "@/components/settings/index.vue";

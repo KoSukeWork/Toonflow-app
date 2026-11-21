@@ -7,12 +7,10 @@
           <button
             class="settingsItem"
             type="button"
-            :aria-label="item.id === 'about' && hasDesktopUpdate ? `${item.label}，有新版本可用` : item.label"
+            :aria-label="item.label"
             :aria-pressed="activePanel.id === item.id"
             @click="activePanel = item">
-            <el-badge class="panelIcon" isDot :hidden="item.id !== 'about' || !hasDesktopUpdate">
-              <component :is="item.icon" :size="18" aria-hidden="true" />
-            </el-badge>
+            <component :is="item.icon" class="panelIcon" :size="18" aria-hidden="true" />
             <span>{{ item.label }}</span>
           </button>
         </template>
@@ -38,14 +36,12 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, shallowRef } from "vue";
 import { authState } from "@/lib/auth";
-import { hasDesktopUpdate } from "@/stores/desktopUpdate";
 import { isMobile } from "@/lib/platform";
 import {
   IconPalette,
   IconSettings,
   IconPhotoVideo,
   IconBuildingStore,
-  IconInfoCircle,
   IconCode,
   IconPlugConnected,
   IconUserCog,
@@ -83,11 +79,10 @@ const panels = [
     component: defineAsyncComponent(() => import("./panels/personalization.vue")),
   },
   { id: "developer", label: "开发者选项", icon: IconCode, component: defineAsyncComponent(() => import("./panels/developer/index.vue")) },
-  { id: "about", label: "关于", icon: IconInfoCircle, component: defineAsyncComponent(() => import("./panels/about.vue")) },
 ];
 const settingsPanels = computed(() => {
   if (!authState.value.enabled) return panels;
-  const personalPanels = ["ui", "general", "personalization", "about"];
+  const personalPanels = ["ui", "general", "personalization"];
   const teamPanels = ["languageModel", "mediaModel", "pluginMarket"];
   return panels.filter(panel => personalPanels.includes(panel.id) || (authState.value.user?.role === "admin" && teamPanels.includes(panel.id)));
 });

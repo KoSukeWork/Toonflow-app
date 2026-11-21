@@ -11,10 +11,9 @@ const personalFields = {
   general: z.record(z.string(), z.json()),
   documentExtensions: z.record(z.string(), z.string()),
   helloCompleted: z.boolean(),
-  updateBoxSeenBuilds: z.array(z.string()),
   personalization: z.strictObject({ memoryEnabled: z.boolean().optional() }),
 };
-const sharedKeys = new Set(["customProviders", "mediaProviderConfigs", "mcp", "ffmpeg", "agentSystemPrompt", "desktopUpdateSource", "desktopUpdateCustomUrl"]);
+const sharedKeys = new Set(["customProviders", "mediaProviderConfigs", "mcp", "ffmpeg", "agentSystemPrompt"]);
 const publicProvider = providerSchema.pick({ models: true }).extend({ id: z.string(), label: z.string() });
 
 function userPreferences(user: AuthUser) {

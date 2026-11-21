@@ -9,10 +9,9 @@ import { promisify } from "node:util";
 import { dlopen, ptr } from "bun:ffi";
 import type { DesktopRuntime, PluginInstallRequest } from "@toonflow/server/desktop";
 import { showNativeSplash } from "@toonflow/startup";
-import Electrobun, { ApplicationMenu, BrowserWindow, PATHS, Screen, Utils, Updater } from "electrobun/main";
+import Electrobun, { ApplicationMenu, BrowserWindow, PATHS, Screen, Utils } from "electrobun/main";
 import { parseInstallUrl } from "./protocol";
 import saveFile, { selectSaveFile } from "./saveFile";
-import createWindowsUpdater, { confirmWindowsUpdateStartup } from "./update/windowsUpdater";
 
 const execFileAsync = promisify(execFile);
 const pendingInstalls: PluginInstallRequest[] = [];
@@ -37,7 +36,7 @@ async function restoreInstallRegistration(installDirectory: string) {
   const uninstaller = resolve(installDirectory, "UninstallNSIS.exe");
   if (process.platform === "win32" && existsSync(uninstaller)) {
     try {
-      // SDK 启动和更新会重写卸载入口；安装了 NSIS 时统一交给它处理数据保留选项。
+      // SDK 启动时会重写卸载入口；安装了 NSIS 时统一交给它处理数据保留选项。
       const { identifier, channel } = await file(resolve(PATHS.RESOURCES_FOLDER, "version.json")).json();
       const registryKey = `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${identifier}.${channel}`;
       for (const [name, command] of [["UninstallString", `"${uninstaller}"`], ["QuietUninstallString", `"${uninstaller}" /S`]]) {
@@ -55,7 +54,7 @@ async function restoreInstallRegistration(installDirectory: string) {
           if ((error as { code?: number }).code !== 1) throw error;
           protocolExists = false;
         }
-        // ACT: 自动更新不经过 NSIS；仅补全缺失协议，已有注册（包括其他安装）保持不动。
+        // ACT: 仅补全缺失协议，已有注册（包括其他安装）保持不动。
         if (!protocolExists) {
           for (const [key, value] of [[protocolKey, "URL:Toonflow Protocol"], [`${protocolKey}\\DefaultIcon`, `"${resolve(PATHS.RESOURCES_FOLDER, "app.ico")}",0`], [commandKey, command]]) {
             await execFileAsync("reg.exe", ["add", key, "/ve", "/t", "REG_SZ", "/d", value, "/f"], { windowsHide: true });
@@ -89,8 +88,6 @@ async function start() {
       // ACT: WKWebView 的 Command 编辑快捷键由原生菜单角色交给当前响应者处理。
       ApplicationMenu.setApplicationMenu([
         { label: "Toonflow", submenu: [
-          { role: "about" },
-          { type: "separator" },
           { role: "hide" },
           { role: "hideOthers" },
           { role: "showAll" },
@@ -210,20 +207,11 @@ async function start() {
             splash = undefined;
           }
           isShowing = true;
-          // ACT: 安装器已完成注册；更新后的修复仅首次展示时执行，不阻塞主窗口。
+          // ACT: 首次展示窗口时修复安装注册信息，不阻塞主窗口。
           void restoreInstallRegistration(installDirectory);
         }
-        if (failed && !connection.remote) {
-          if (process.platform === "win32") confirmWindowsUpdateStartup(PATHS.RESOURCES_FOLDER, true);
-          else await (Updater as DesktopRuntime["updater"]).confirmStartup?.(true);
+        if (failed || connection.remote) {
           deliverInstall = undefined;
-          return;
-        }
-        if (connection.remote) {
-          // 远端离线不代表本机更新启动失败；安装协议等回到独立运行后再投递。
-          deliverInstall = undefined;
-          if (process.platform === "win32") confirmWindowsUpdateStartup(PATHS.RESOURCES_FOLDER);
-          else await (Updater as DesktopRuntime["updater"]).confirmStartup?.();
           return;
         }
         deliverInstall = request => {
@@ -236,12 +224,8 @@ async function start() {
           deliverInstall(pendingInstalls[0]!);
           pendingInstalls.shift();
         }
-        if (process.platform === "win32") confirmWindowsUpdateStartup(PATHS.RESOURCES_FOLDER);
-        else await (Updater as DesktopRuntime["updater"]).confirmStartup?.();
       },
       openDevTools() { mainWindow.webview.openDevTools(); },
-      // ACT: Windows 使用两阶段退出；Intel Mac 由兼容入口适配 1.18.1 更新器。
-      updater: process.platform === "win32" ? createWindowsUpdater(PATHS.RESOURCES_FOLDER, Utils as unknown as Parameters<typeof createWindowsUpdater>[1]) : Updater,
     } satisfies DesktopRuntime;
     if (process.platform === "win32") {
       // ACT: Electrobun 2.0.1 未设置 Windows 窗口图标，复用构建产物中的应用 ICO。
@@ -291,10 +275,6 @@ async function start() {
     await desktopConnection?.close().catch(error => console.error("设备连接关闭失败：", error));
     splash?.close();
     console.error("桌面启动失败：", error);
-    if (process.platform === "win32") {
-      try { confirmWindowsUpdateStartup(PATHS.RESOURCES_FOLDER, true); }
-      catch (resultError) { console.error("更新启动结果写入失败：", resultError); }
-    }
     Utils.quit(1);
   }
 }
