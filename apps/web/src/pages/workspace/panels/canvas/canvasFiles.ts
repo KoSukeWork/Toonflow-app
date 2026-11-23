@@ -1,5 +1,6 @@
 import type { Edge, Node, ViewportTransform } from "@vue-flow/core";
 import axios from "axios";
+import { authState } from "@/lib/auth";
 import type useWorkspaceFiles from "@/lib/workspaceFiles";
 import type { TextSnapshot } from "@/lib/workspaceFiles";
 import { isCanvasFile } from "@/pages/workspace/canvasFile";
@@ -43,7 +44,9 @@ export async function readCanvasFiles(files: Files, path = "", options: Omit<Doc
     const entry = entries[index]!;
     try {
       if (entry.type === "directory") {
-        if (entry.name.toLowerCase() !== "assets") entries.push(...(await files.list(entry.path, signal)).entries);
+        if (entry.name.toLowerCase() !== "assets" && !(authState.value.enabled && entry.path === "assetLibrary")) {
+          entries.push(...(await files.list(entry.path, signal)).entries);
+        }
         continue;
       }
       if (!/\.json$/i.test(entry.name) || !await isCanvasFile(files, entry.path, signal)) continue;

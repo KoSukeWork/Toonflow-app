@@ -2,7 +2,7 @@ import { z } from "zod";
 
 const requestSchema = z.object({
   action: z.enum(["list", "read", "create", "update", "mkdir", "move", "delete", "import"]),
-  path: z.string().max(4096).optional().describe("全局素材库内的相对路径。list 可省略或为空以查询根目录；其他操作必填"),
+  path: z.string().max(4096).optional().describe("素材库内的相对路径。list 可省略或为空以查询根目录；其他操作必填"),
   query: z.string().max(500).optional().describe("list 可选：在 path 下递归按名称或路径筛选文件；省略时只列出当前目录"),
   cursor: z.string().max(1024).optional().describe("list 可选：使用上次返回的 nextCursor 继续读取，不自行构造"),
   offset: z.number().int().min(1).optional().describe("read 可选：文本起始行号，从 1 开始"),
@@ -10,7 +10,7 @@ const requestSchema = z.object({
   content: z.string().max(200000).optional().describe("create/update 的完整文本内容，与 sourcePath 二选一；不能用于写入伪造的 Base64 媒体"),
   sourcePath: z.string().min(1).max(4096).optional().describe("create/update 的来源文件，必须是当前工作区内真实存在的相对路径，文件最多 100 MB，与 content 二选一"),
   revision: z.string().regex(/^[a-f\d]{64}$/i).optional().describe("update 必填：最近一次 read 返回的 SHA-256 revision，防止覆盖已变化的素材"),
-  target: z.string().min(1).max(4096).optional().describe("move 必填：全局素材库内的目标相对路径；import 可选：当前工作区内的目标相对路径，省略时生成唯一新文件"),
+  target: z.string().min(1).max(4096).optional().describe("move 必填：素材库内的目标相对路径；import 可选：当前工作区内的目标相对路径，省略时生成唯一新文件"),
 }).strict();
 
 const actionFields: Record<z.infer<typeof requestSchema>["action"], readonly string[]> = {

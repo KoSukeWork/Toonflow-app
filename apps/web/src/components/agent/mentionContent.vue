@@ -41,7 +41,7 @@ const textValue = computed(() => {
 });
 
 function sourceLabel(mention: AgentMention) {
-  return mention.source.kind === "asset" ? `全局素材 / ${mention.source.path}`
+  return mention.source.kind === "asset" ? `素材库 / ${mention.source.path}`
     : `${mention.source.canvasName} / ${mention.source.nodeName} / ${mention.source.outputName}（${mention.source.nodeId}）`;
 }
 
@@ -67,7 +67,7 @@ watch([previewVisible, selected, () => props.directory], async ([visible, mentio
   loading.value = true;
   try {
     if (mention.source.kind === "asset" && mentionThumbnailProps(mention).globalAsset) {
-      const { data } = await axios.get<Blob>("/api/assets/read", { params: { path: mention.source.path }, responseType: "blob", signal: controller.signal });
+      const { data } = await axios.get<Blob>("/api/assets/read", { params: { directory, path: mention.source.path }, responseType: "blob", signal: controller.signal });
       controller.signal.throwIfAborted();
       previewUrl.value = URL.createObjectURL(data);
       const url = previewUrl.value;

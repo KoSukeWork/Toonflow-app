@@ -1,6 +1,7 @@
 import { open, opendir, readFile, stat } from "@toonflow/file";
 import { basename } from "node:path";
 import u from "@/utils";
+import { isMultiUserEnabled } from "@/utils/auth";
 import { createCanvasMention, mentionAssetType, mentionNodeOutputs, mentionRecord, queryMentionNodes,
   type MentionCanvasNode, type MentionQuery } from "./mentionSources";
 import type { AgentMention } from "./runtime/types";
@@ -61,7 +62,7 @@ export async function listMentionCanvases(directory: string, signal: AbortSignal
       signal.throwIfAborted();
       const relativePath = folder ? `${folder}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (entry.name.toLowerCase() !== "assets") folders.push(relativePath);
+        if (entry.name.toLowerCase() !== "assets" && !(isMultiUserEnabled() && relativePath === "assetLibrary")) folders.push(relativePath);
         continue;
       }
       if (!entry.isFile() || !/\.json$/i.test(entry.name)) continue;
@@ -93,8 +94,7 @@ export async function storedMentionOutput(directory: string, canvasId: string, n
   return outputId === undefined ? mentionNodeOutputs(node) : createCanvasMention(node, canvasId, outputId, path => readMentionText(directory, path));
 }
 
-export async function selectMentionAsset(relativePath: string): Promise<AgentMention> {
-  const directory = await u.assets.getAssetsDirectory();
+export async function selectMentionAsset(directory: string, relativePath: string): Promise<AgentMention> {
   const { path } = await u.workspaceFile.resolveWorkspacePath(directory, relativePath);
   const info = await stat(path);
   const type = mentionAssetType(relativePath);

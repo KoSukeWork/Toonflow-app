@@ -23,10 +23,10 @@ export default router.get("/", validateFields(shape, "query"), async (req, res) 
     const options = { query: args.query, cursor: args.cursor, limit: args.limit, signal: controller.signal };
     let result: unknown;
     if (args.operation === "canvases") result = await u.mentionFiles.listMentionCanvases(directory, controller.signal);
-    else if (args.operation === "assets") result = await u.mentionFiles.queryMentionAssets({ ...options, path: args.path });
+    else if (args.operation === "assets") result = await u.mentionFiles.queryMentionAssets(await u.assets.getAssetsDirectory(directory), { ...options, path: args.path });
     else if (args.operation === "selectAsset") {
       if (!args.path) throw Object.assign(new Error("请选择素材"), { status: 400 });
-      result = await u.mentionFiles.selectMentionAsset(args.path);
+      result = await u.mentionFiles.selectMentionAsset(await u.assets.getAssetsDirectory(directory), args.path);
     } else {
       if (!args.canvasId) throw Object.assign(new Error("请选择画布"), { status: 400 });
       if (args.operation === "nodes") result = await u.mentionFiles.queryStoredMentionNodes(directory, args.canvasId, options);

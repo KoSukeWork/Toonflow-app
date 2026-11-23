@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import { error } from "@/lib/responseFormat";
 import { readSession, runAsRequestUser } from "@/utils/auth";
 
-const embeddedResources = new Set(["GET /api/nodes/files", "GET /api/ext/read", "GET /api/tools/client", "GET /api/assets/read"]);
+const embeddedResources = new Set(["GET /api/nodes/files", "GET /api/ext/read", "GET /api/tools/client"]);
 
 const memberRoutes = new Set([
   "POST /api/auth/logout",
@@ -31,6 +31,11 @@ const memberRoutes = new Set([
   "POST /api/singleAgent/answer",
   "POST /api/singleAgent/toolResult",
   "GET /api/assets/list",
+  "GET /api/assets/read",
+  "PUT /api/assets/save",
+  "POST /api/assets/mkdir",
+  "POST /api/assets/rename",
+  "DELETE /api/assets/remove",
   "POST /api/workspaces/files/importImage",
   "GET /api/workspaces/check",
   "GET /api/workspaces/files/list",
@@ -59,10 +64,6 @@ const adminRoutes = new Set([
   "POST /api/projects/register",
   "GET /api/projects/ownership",
   "PUT /api/projects/transferOwnership",
-  "PUT /api/assets/save",
-  "POST /api/assets/mkdir",
-  "POST /api/assets/rename",
-  "DELETE /api/assets/remove",
   "POST /api/providers/models",
   "GET /api/providers/media/list",
   "POST /api/providers/media/models",
@@ -111,9 +112,11 @@ export const multiUserAccess: RequestHandler = (req, res, next) => {
   const user = readSession(req);
   if (!user) return void res.status(401).json(error("请先登录", null, 401));
   if (!embeddedResources.has(route)) {
-    const accountId = req.get("x-toonflow-user");
+    // 媒体标签无法设置请求头，预览链接携带页面所属账号。授权始终使用登录会话。
+    const previewUser = route === "GET /api/assets/read" ? req.query.userId : undefined;
+    const accountId = req.get("x-toonflow-user") ?? previewUser;
     if (!accountId) return void res.status(400).json(error("请求缺少账号标识（x-toonflow-user），请更新客户端或插件后重试", null, 400));
-    if (accountId !== user.id) return void res.status(401).json(error("登录账号已变更，请重新加载页面", null, 401));
+    if (accountId !== user.id || (previewUser !== undefined && previewUser !== user.id)) return void res.status(401).json(error("登录账号已变更，请重新加载页面", null, 401));
   }
   // ACT: 精确匹配方法与路径，由各工程接口继续校验所请求的项目。新增接口默认关闭。
   if (!embeddedResources.has(route) && !memberRoutes.has(route) && !(user.role === "admin" && adminRoutes.has(route))) {

@@ -6,6 +6,7 @@ import type { NodeOutput } from "@toonflow/nodes-scaffold/values";
 import useWorkspaceFiles from "@/lib/workspaceFiles";
 
 const assetDragType = "application/toonflow-asset";
+const assetDirectoryDragType = "application/toonflow-asset-directory";
 const fileMimeTypes: Record<string, string> = {
   png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif",
   avif: "image/avif", apng: "image/apng", bmp: "image/bmp", svg: "image/svg+xml", ico: "image/x-icon",
@@ -53,10 +54,11 @@ export function getClipboardMediaFiles(event: ClipboardEvent) {
   return files.map((file, index) => createClipboardMediaFile(file, index));
 }
 
-export function startAssetDrag(event: DragEvent, entry: { type: string; path: string }) {
+export function startAssetDrag(event: DragEvent, entry: { type: string; path: string }, directory?: string) {
   if (entry.type !== "file" || !event.dataTransfer) return;
   event.dataTransfer.effectAllowed = "copy";
   event.dataTransfer.setData(assetDragType, entry.path);
+  if (directory) event.dataTransfer.setData(assetDirectoryDragType, directory);
 }
 
 export function isCanvasFileDrag(event: DragEvent) {
@@ -80,7 +82,8 @@ export async function dropCanvasFiles(event: DragEvent, context: CanvasFileConte
   try {
     signal.throwIfAborted();
     if (path) {
-      const { data } = await axios.get<Blob>("/api/assets/read", { params: { path }, responseType: "blob", signal });
+      const directory = transfer.getData(assetDirectoryDragType);
+      const { data } = await axios.get<Blob>("/api/assets/read", { params: { directory, path }, responseType: "blob", signal });
       droppedFiles = [new File([data], path.split("/").pop()!, { type: data.type })];
     }
     await importCanvasFiles(droppedFiles, position, context);

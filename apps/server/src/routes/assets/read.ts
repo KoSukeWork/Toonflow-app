@@ -10,7 +10,7 @@ import { validateFields } from "@/lib/middleware";
 const router = Router();
 
 export default router.get("/", validateFields({ path: z.string().min(1).max(4096), download: z.literal("true").optional(), thumbnail: z.literal("true").optional() }, "query"), async (req, res, next) => {
-  const root = await u.assets.getAssetsDirectory();
+  const root = await u.assets.getAssetsDirectory(req.query.directory);
   const { directory, path } = await u.workspaceFile.resolveWorkspacePath(root, req.query.path as string);
   u.workspaceFile.protectWorkspaceRoot(directory, path);
   const file = await lstat(path);

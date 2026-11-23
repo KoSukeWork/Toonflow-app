@@ -2,7 +2,7 @@
   <el-dropdown ref="menu" trigger="contextmenu" virtualTriggering :virtualRef="menuAnchor" placement="bottom-start" :showArrow="false" :hideOnClick="false" popperClass="assetActionMenu" @command="handleCommand" @visibleChange="(opened: boolean) => { if (!opened) moveVisible = false; }">
     <template #dropdown>
       <el-dropdown-menu v-if="activeEntry">
-        <el-dropdown-item v-if="canManage" command="move" :disabled="busy">
+        <el-dropdown-item command="move" :disabled="busy">
           <el-popover v-model:visible="moveVisible" trigger="hover" placement="right-start" :width="220" :offset="0" :showArrow="false" :showAfter="0" :hideAfter="150" appendTo=".assetActionMenu">
             <template #reference>
               <span class="moveTrigger"><span class="moveLabel">移动到</span><icon-chevron-right :size="14" /></span>
@@ -15,9 +15,9 @@
             </div>
           </el-popover>
         </el-dropdown-item>
-        <el-dropdown-item v-if="activeEntry.type === 'file'" command="download" :divided="canManage">下载</el-dropdown-item>
-        <el-dropdown-item v-if="canManage" command="rename" :disabled="busy">重命名</el-dropdown-item>
-        <el-dropdown-item v-if="canManage" class="deleteAction" command="delete" :disabled="busy || !!activeEntry.children?.length" :title="activeEntry.children?.length ? '请先删除文件夹内的素材' : undefined">删除</el-dropdown-item>
+        <el-dropdown-item v-if="activeEntry.type === 'file'" command="download" divided>下载</el-dropdown-item>
+        <el-dropdown-item command="rename" :disabled="busy">重命名</el-dropdown-item>
+        <el-dropdown-item class="deleteAction" command="delete" :disabled="busy || !!activeEntry.children?.length" :title="activeEntry.children?.length ? '请先删除文件夹内的素材' : undefined">删除</el-dropdown-item>
       </el-dropdown-menu>
     </template>
   </el-dropdown>
@@ -32,7 +32,7 @@ import { ElMessage, ElMessageBox, type DropdownInstance } from "element-plus";
 import { IconChevronRight, IconFolder, IconFolderPlus } from "@tabler/icons-vue";
 
 type AssetEntry = { name: string; path: string; type: "file" | "directory"; children?: AssetEntry[] };
-const props = defineProps<{ entries: AssetEntry[]; canManage: boolean }>();
+const props = defineProps<{ directory?: string; entries: AssetEntry[] }>();
 const emit = defineEmits<{ changed: [path?: string, target?: string] }>();
 const menu = ref<DropdownInstance>();
 const menuAnchor = shallowRef({ getBoundingClientRect: () => new DOMRect() });
@@ -79,7 +79,7 @@ function showError(error: unknown) {
 async function relocate(entry: AssetEntry, target: string) {
   busy.value = true;
   try {
-    await axios.post("/api/assets/rename", { path: entry.path, target });
+    await axios.post("/api/assets/rename", { path: entry.path, target }, { params: { directory: props.directory } });
     emit("changed", entry.path, target);
   } finally {
     busy.value = false;
@@ -109,7 +109,7 @@ async function createMoveFolder() {
       cancelButtonText: "取消",
     });
     const name = value.trim();
-    await axios.post("/api/assets/mkdir", { path: name });
+    await axios.post("/api/assets/mkdir", { path: name }, { params: { directory: props.directory } });
     await relocate(entry, name + "/" + entry.name);
   } catch (error) {
     showError(error);
@@ -127,7 +127,7 @@ async function handleCommand(command: string) {
   closeMenu();
   try {
     if (command === "download") {
-      await saveFile(() => axios.get<Blob>("/api/assets/read", { params: { path: entry.path, download: true }, responseType: "blob" }).then(({ data }) => data), entry.name);
+      await saveFile(() => axios.get<Blob>("/api/assets/read", { params: { directory: props.directory, path: entry.path, download: true }, responseType: "blob" }).then(({ data }) => data), entry.name);
     }
     if (command === "rename") {
       const { value } = await ElMessageBox.prompt("名称", "重命名", {
@@ -144,7 +144,7 @@ async function handleCommand(command: string) {
       await ElMessageBox.confirm("确定删除“" + entry.name + "”？", "删除素材", { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" });
       busy.value = true;
       try {
-        await axios.delete("/api/assets/remove", { data: { path: entry.path } });
+        await axios.delete("/api/assets/remove", { params: { directory: props.directory }, data: { path: entry.path } });
         emit("changed", entry.path);
       } finally {
         busy.value = false;

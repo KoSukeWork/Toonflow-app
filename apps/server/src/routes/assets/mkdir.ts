@@ -7,6 +7,7 @@ import { success } from "@/lib/responseFormat";
 const router = Router();
 
 export default router.post("/", validateFields({ path: z.string().min(1).max(4096) }), async (req, res) => {
-  await u.assets.createAssetDirectory(req.body.path);
+  const root = await u.assets.getAssetsDirectory(req.query.directory);
+  await u.assets.createAssetDirectory(root, req.body.path);
   res.json(success());
 });

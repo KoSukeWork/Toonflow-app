@@ -320,7 +320,7 @@ watch([() => props.active, messageList], async ([active, element]) => {
 let sender: xSender | undefined;
 watch(locale, () => {
   if (!sender) return;
-  sender.updateConfig({ placeholder: translate("输入消息，@ 提及节点输出或全局素材…") });
+  sender.updateConfig({ placeholder: `${translate("输入消息")} · @ ${translate("提及节点输出或素材")}` });
   sender.chatElement.richText.setAttribute("aria-label", translate("消息"));
   for (const line of sender.chatEditor.NODES) for (const tag of line.children) {
     if (tag.type === "Mention") tag.$el.setAttribute("aria-label", t`预览 ${tag.name}`);
@@ -850,7 +850,7 @@ watch(senderElement, (element, _previous, onCleanup) => {
   if (!element) return;
   const instance = new xSender(element, {
     autoFocus: props.active,
-    placeholder: translate("输入消息，@ 提及节点输出或全局素材…"),
+    placeholder: `${translate("输入消息")} · @ ${translate("提及节点输出或素材")}`,
     chatStyle: { minHeight: "44px", maxHeight: "50vh", fontSize: "14px", lineHeight: "24px" },
     keyboardSendFun: event => event.key === "Enter" && !event.shiftKey && !event.isComposing,
     keyboardWrapFun: event => event.key === "Enter" && event.shiftKey && !event.isComposing,

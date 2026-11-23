@@ -23,7 +23,7 @@ async function listEntries(root: string, directory: string): Promise<AssetEntry[
     }));
 }
 
-export default router.get("/", async (_req, res) => {
-  const directory = await u.assets.getAssetsDirectory();
+export default router.get("/", async (req, res) => {
+  const directory = await u.assets.getAssetsDirectory(req.query.directory);
   res.set("Cache-Control", "no-store").json(success({ entries: await listEntries(directory, directory) }));
 });

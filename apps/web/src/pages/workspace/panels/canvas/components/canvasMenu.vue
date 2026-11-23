@@ -509,7 +509,7 @@ async function listCanvasEntries(directory: string, path = "", recursive = false
   for (let index = 0; index < entries.length; index++) {
     checkCanvasDirectory(directory, signal);
     const entry = entries[index]!;
-    if (entry.type !== "directory" || ["assets", ".agent"].includes(entry.name.toLowerCase())) continue;
+    if (entry.type !== "directory" || ["assets", ".agent"].includes(entry.name.toLowerCase()) || (authState.value.enabled && entry.path === "assetLibrary")) continue;
     const folder: CanvasEntry = { ...entry };
     folders.push(folder);
     if (recursive) {
@@ -592,8 +592,9 @@ async function startFolder() {
 
 function cancelFolder() { if (!busy.value) folderDraft.value = null; }
 
-function normalizeFolderName(name: string) {
+function normalizeFolderName(name: string, parent = "") {
   name = normalizeCanvasName(name, "文件夹");
+  if (authState.value.enabled && !parent && name.toLowerCase() === "assetlibrary") throw new Error("assetLibrary 是工程素材库目录，请使用其他文件夹名称");
   if (name.toLowerCase() === "assets") throw new Error("assets 是节点素材目录，请使用其他文件夹名称");
   if (name.toLowerCase() === ".agent") throw new Error(".agent 是 Agent 数据目录，请使用其他文件夹名称");
   return name;
@@ -693,9 +694,9 @@ async function handleItemCommand(command: string) {
     if (command === "rename") {
       const { value } = await ElMessageBox.prompt("文件夹名称", "重命名", {
         inputValue: entry.name, confirmButtonText: "保存", cancelButtonText: "取消",
-        inputValidator: name => { try { normalizeFolderName(name); return true; } catch (error) { return (error as Error).message; } },
+        inputValidator: name => { try { normalizeFolderName(name, parentPath(entry.path)); return true; } catch (error) { return (error as Error).message; } },
       });
-      const name = normalizeFolderName(value);
+      const name = normalizeFolderName(value, parentPath(entry.path));
       if (name !== entry.name) await relocateEntry(entry, `${parentPath(entry.path) ? `${parentPath(entry.path)}/` : ""}${name}`, directory);
     } else if (command === "delete") {
       await ElMessageBox.confirm(`确定删除文件夹“${entry.name}”？`, "删除文件夹", { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" });

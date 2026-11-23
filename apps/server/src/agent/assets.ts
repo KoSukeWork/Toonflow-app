@@ -1,4 +1,3 @@
-import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
 import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { lstat, readFile, realpath } from "@toonflow/file";
 import { assetRequestSchema } from "@toonflow/tool-asset-operator/runtime";
@@ -32,15 +31,13 @@ export function createAssetContext(cwd: string): NonNullable<ToolContext["assets
     async execute(id, params, signal, onUpdate, executionContext) {
       const request = assetRequestSchema.parse(params);
       const { action, path, target } = request;
-      if (isMultiUserEnabled() && getCurrentUser()?.role !== "admin" && !["list", "read", "import"].includes(action)) {
-        throw Object.assign(new Error("只有管理员可以维护公共素材"), { status: 403 });
-      }
       signal?.throwIfAborted();
+      const root = await getAssetsDirectory(cwd);
       let result;
       if (action === "list") {
-        result = await queryMentionAssets({ path, query: request.query, cursor: request.cursor, limit: request.limit, signal });
+        result = await queryMentionAssets(root, { path, query: request.query, cursor: request.cursor, limit: request.limit, signal });
       } else if (action === "read") {
-        const file = await readAssetFile(path!, signal);
+        const file = await readAssetFile(root, path!, signal);
         const { mimeType, dataType } = mentionAssetType(file.path);
         const isDocument = !!getDocumentMimeType(file.path, mimeType);
         const details = { path: file.path, revision: file.revision, mimeType, size: file.content.byteLength,
@@ -49,7 +46,6 @@ export function createAssetContext(cwd: string): NonNullable<ToolContext["assets
         if (dataType !== "STRING" && !isImage && !isDocument) {
           return { content: [{ type: "text", text: `${JSON.stringify(details)}\n此格式不直接展示内容；使用 import 复制到工作区后预览或交给相应节点。` }], details };
         }
-        const root = await getAssetsDirectory();
         const absolutePath = resolve(root, file.path);
         const allowSnapshot = (candidate: string) => {
           signal?.throwIfAborted();
@@ -65,18 +61,18 @@ export function createAssetContext(cwd: string): NonNullable<ToolContext["assets
       } else if (action === "create" || action === "update") {
         const content = request.content ?? await readWorkspaceSource(cwd, request.sourcePath!, signal);
         signal?.throwIfAborted();
-        result = await writeAssetFile(path!, content, request.revision);
+        result = await writeAssetFile(root, path!, content, request.revision);
       } else if (action === "import") {
-        const imported = await importAssetFile(cwd, path!, target, signal);
+        const imported = await importAssetFile(root, cwd, path!, target, signal);
         const { mimeType, dataType } = mentionAssetType(imported.path);
         const details = { ...imported, mimeType };
         const url = imported.workspacePath.split("/").map(encodeURIComponent).join("/");
         const preview = dataType === "IMAGE" ? `\n![导入素材](<${url}>)` : "";
         return { content: [{ type: "text", text: `${JSON.stringify(details)}${preview}` }], details };
       } else {
-        if (action === "mkdir") await createAssetDirectory(path!);
-        else if (action === "move") await moveAsset(path!, target!);
-        else await removeAsset(path!);
+        if (action === "mkdir") await createAssetDirectory(root, path!);
+        else if (action === "move") await moveAsset(root, path!, target!);
+        else await removeAsset(root, path!);
         result = { action, path, ...(target ? { target } : {}) };
       }
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };

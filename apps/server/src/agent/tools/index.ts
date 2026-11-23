@@ -11,7 +11,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { CanvasContext, QuestionContext, ToolContext, ToolFiles } from "@toonflow/tools-scaffold/runtime";
 import conf from "@/utils/conf";
-import { getCurrentUser, isMultiUserEnabled } from "@/utils/auth";
+import { isMultiUserEnabled } from "@/utils/auth";
 import { isWithin, resolveWorkspacePath, writeWorkspaceFile, renameWorkspaceFile, lockWorkspaceFiles, protectWorkspaceRoot } from "@/utils/workspace/files";
 import { listTools, loadTool, validateToolConfig } from "@/utils/plugins/tools";
 import { createSkillContext } from "@/agent/skills";
@@ -116,7 +116,7 @@ export function availableAgentTool(name: string) {
 }
 
 export function agentToolConfig(name: string, config: Record<string, unknown>) {
-  if (isMultiUserEnabled() && (name === "workspace" || (name === "assetOperator" && getCurrentUser()?.role !== "admin"))) {
+  if (isMultiUserEnabled() && name === "workspace") {
     return { ...config, readOnly: true };
   }
   return config;
