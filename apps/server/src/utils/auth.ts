@@ -19,6 +19,7 @@ let verifying = 0;
 
 export const usernameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,39}$/);
 export const passwordSchema = z.string().min(12).max(128);
+type StoredAuthUser = Omit<AuthUser, "disabled"> & { disabled: number };
 
 export function isMultiUserEnabled() {
   return process.env.TOONFLOW_MULTI_USER === "1" && !getRuntimePlatform().host;
@@ -59,7 +60,7 @@ export async function initializeAccounts(app: Express, dataDirectory: string) {
       PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY, username TEXT NOT NULL COLLATE NOCASE UNIQUE, passwordHash TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'member'))
+        role TEXT NOT NULL CHECK (role IN ('admin', 'member')), disabled INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS sessions (
         tokenHash TEXT PRIMARY KEY, userId TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires INTEGER NOT NULL
@@ -80,6 +81,9 @@ export async function initializeAccounts(app: Express, dataDirectory: string) {
       END;
       INSERT OR IGNORE INTO projectMembers SELECT id, ownerId, lastOpenedAt FROM projects;
     `);
+    if (!(db.query("PRAGMA table_info(users)").all() as { name: string }[]).some(column => column.name === "disabled")) {
+      db.exec("ALTER TABLE users ADD COLUMN disabled INTEGER NOT NULL DEFAULT 0");
+    }
     if (!db.query("SELECT 1 FROM users WHERE role = 'admin' LIMIT 1").get()) {
       const username = usernameSchema.safeParse(process.env.TOONFLOW_ADMIN_USERNAME || "admin");
       const password = passwordSchema.safeParse(process.env.TOONFLOW_ADMIN_PASSWORD);
@@ -88,7 +92,7 @@ export async function initializeAccounts(app: Express, dataDirectory: string) {
       }
       const passwordHash = await Bun.password.hash(password.data);
       db.query(`
-        INSERT INTO users SELECT ?, ?, ?, 'admin'
+        INSERT INTO users (id, username, passwordHash, role) SELECT ?, ?, ?, 'admin'
         WHERE NOT EXISTS (SELECT 1 FROM users WHERE role = 'admin')
       `).run(randomUUID(), username.data, passwordHash);
     }
@@ -113,13 +117,14 @@ function requestTokenHash(request: Request) {
 export function readSession(request: Request) {
   const tokenHash = requestTokenHash(request);
   if (!tokenHash) return undefined;
-  return getAccountDatabase(request).query<AuthUser, [string, number]>(`
-    SELECT users.id, users.username, users.role FROM sessions JOIN users ON sessions.userId = users.id
-    WHERE sessions.tokenHash = ? AND expires > ?
-  `).get(tokenHash, Date.now()) ?? undefined;
+  const user = getAccountDatabase(request).query<StoredAuthUser, [string, number]>(`
+    SELECT users.id, users.username, users.role, users.disabled FROM sessions JOIN users ON sessions.userId = users.id
+    WHERE sessions.tokenHash = ? AND expires > ? AND users.disabled = 0
+  `).get(tokenHash, Date.now());
+  return user ? { ...user, disabled: Boolean(user.disabled) } : undefined;
 }
 
-export async function verifyLogin(request: Request, username: string, password: string) {
+async function verifyPassword(request: Request, username: string, password: string, changing = false) {
   const db = getAccountDatabase(request);
   const now = Date.now();
   for (const [ip, attempt] of loginAttempts) if (attempt.expires <= now) loginAttempts.delete(ip);
@@ -136,11 +141,12 @@ export async function verifyLogin(request: Request, username: string, password: 
     const account = db.query<AuthUser & { passwordHash: string }, [string]>("SELECT * FROM users WHERE username = ?").get(username);
     const fallback = account ?? db.query<{ passwordHash: string }, []>("SELECT passwordHash FROM users LIMIT 1").get();
     if (!fallback || !(await Bun.password.verify(password, fallback.passwordHash)) || !account) {
+      if (changing) throw Object.assign(new Error("当前密码不正确"), { status: 400 });
       throw Object.assign(new Error("账号或密码不正确"), { status: 401 });
     }
     attempt.count--;
-    const { id, role } = account;
-    return { id, username: account.username, role };
+    if (account.disabled) throw Object.assign(new Error("该账号已停用"), { status: 403 });
+    return account;
   } finally { verifying--; }
 }
 
@@ -148,7 +154,8 @@ function cookieOptions(request: Request) {
   return { httpOnly: true, sameSite: "strict" as const, secure: request.secure || process.env.TOONFLOW_SECURE_COOKIES === "1", path: "/" };
 }
 
-export function startSession(request: Request, response: Response, user: AuthUser) {
+export async function login(request: Request, response: Response, username: string, password: string): Promise<AuthUser> {
+  const account = await verifyPassword(request, username, password);
   const db = getAccountDatabase(request);
   const token = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(token).digest("hex");
@@ -156,9 +163,42 @@ export function startSession(request: Request, response: Response, user: AuthUse
   const now = Date.now();
   db.transaction(() => {
     db.query("DELETE FROM sessions WHERE expires <= ? OR tokenHash = ?").run(now, previousTokenHash ?? null);
-    db.query("INSERT INTO sessions VALUES (?, ?, ?)").run(tokenHash, user.id, now + sessionDuration);
+    // 只为刚验证的密码签发会话，防止改密期间仍在验证的旧密码重新登录。
+    if (!db.query("INSERT INTO sessions SELECT ?, id, ? FROM users WHERE id = ? AND passwordHash = ? AND disabled = 0")
+      .run(tokenHash, now + sessionDuration, account.id, account.passwordHash).changes) {
+      throw Object.assign(new Error("账号或密码不正确"), { status: 401 });
+    }
   })();
   response.cookie(cookieName, token, { ...cookieOptions(request), maxAge: sessionDuration });
+  return { id: account.id, username: account.username, role: account.role, disabled: false };
+}
+
+async function replacePassword(request: Request, userId: string, previousHash: string, password: string) {
+  const db = getAccountDatabase(request);
+  const hash = await Bun.password.hash(password);
+  db.transaction(() => {
+    if (readSession(request)?.id !== requireRequestUser(request).id) throw Object.assign(new Error("请重新登录"), { status: 401 });
+    if (!db.query("UPDATE users SET passwordHash = ? WHERE id = ? AND passwordHash = ?").run(hash, userId, previousHash).changes) {
+      throw Object.assign(new Error("密码已变更，请重试"), { status: 409 });
+    }
+    db.query("DELETE FROM sessions WHERE userId = ?").run(userId);
+  })();
+}
+
+export async function changePassword(request: Request, currentPassword: string, newPassword: string) {
+  const user = requireRequestUser(request);
+  const account = await verifyPassword(request, user.username, currentPassword, true);
+  if (currentPassword === newPassword) throw Object.assign(new Error("新密码须与当前密码不同"), { status: 400 });
+  await replacePassword(request, user.id, account.passwordHash, newPassword);
+}
+
+export async function resetPassword(request: Request, userId: string, newPassword: string) {
+  const admin = requireRequestUser(request);
+  if (admin.role !== "admin") throw Object.assign(new Error("仅管理员可以重置用户密码"), { status: 403 });
+  if (admin.id === userId) throw Object.assign(new Error("请使用修改密码更改自己的密码"), { status: 400 });
+  const account = getAccountDatabase(request).query<{ passwordHash: string }, [string]>("SELECT passwordHash FROM users WHERE id = ?").get(userId);
+  if (!account) throw Object.assign(new Error("找不到该账号"), { status: 404 });
+  await replacePassword(request, userId, account.passwordHash, newPassword);
 }
 
 export function endSession(request: Request, response: Response) {
@@ -168,15 +208,30 @@ export function endSession(request: Request, response: Response) {
 }
 
 export function listMembers(request: Request) {
-  return getAccountDatabase(request).query<AuthUser, []>("SELECT id, username, role FROM users ORDER BY username").all();
+  const members = getAccountDatabase(request).query<StoredAuthUser, []>("SELECT id, username, role, disabled FROM users ORDER BY username").all();
+  return members.map(member => ({ ...member, disabled: Boolean(member.disabled) }));
 }
 
 export async function createMember(request: Request, username: string, password: string): Promise<AuthUser> {
   const db = getAccountDatabase(request);
   const passwordHash = await Bun.password.hash(password);
   const id = randomUUID();
-  if (!db.query("INSERT INTO users VALUES (?, ?, ?, 'member') ON CONFLICT(username) DO NOTHING").run(id, username, passwordHash).changes) {
+  if (!db.query("INSERT INTO users (id, username, passwordHash, role) VALUES (?, ?, ?, 'member') ON CONFLICT(username) DO NOTHING").run(id, username, passwordHash).changes) {
     throw Object.assign(new Error("账号已存在"), { status: 409 });
   }
-  return { id, username, role: "member" };
+  return { id, username, role: "member", disabled: false };
+}
+
+export function setAccountDisabled(request: Request, userId: string, disabled: boolean): AuthUser {
+  const admin = requireRequestUser(request);
+  if (admin.role !== "admin") throw Object.assign(new Error("仅管理员可以停用或启用账号"), { status: 403 });
+  if (admin.id === userId) throw Object.assign(new Error("不能停用或启用当前登录账号"), { status: 400 });
+  const db = getAccountDatabase(request);
+  const user = db.query<StoredAuthUser, [string]>("SELECT id, username, role, disabled FROM users WHERE id = ?").get(userId);
+  if (!user) throw Object.assign(new Error("找不到该账号"), { status: 404 });
+  db.transaction(() => {
+    db.query("UPDATE users SET disabled = ? WHERE id = ?").run(disabled ? 1 : 0, userId);
+    if (disabled) db.query("DELETE FROM sessions WHERE userId = ?").run(userId);
+  })();
+  return { ...user, disabled };
 }

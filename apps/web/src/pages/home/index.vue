@@ -89,6 +89,10 @@
         </div>
       </section>
     </el-main>
+    <el-footer v-if="authState.user" class="accountFooter">
+      <el-button text @click="passwordVisible = true">修改密码</el-button>
+    </el-footer>
+    <passwordDialog v-if="passwordVisible && authState.user" :account="authState.user" @close="passwordVisible = false" />
     <settings v-model="settingsVisible" />
     <mobileConnect v-if="!authState.enabled" v-model="mobileConnectVisible" />
     <workspacePicker v-if="!authState.enabled" ref="relocationPicker" hideTrigger />
@@ -124,6 +128,7 @@ import settings from "@/components/settings/index.vue";
 import bg from "./bg.vue";
 import workspacePicker from "./workspacePicker.vue";
 import accountManagement from "./accountManagement.vue";
+import passwordDialog from "./passwordDialog.vue";
 import projectSharing from "./projectSharing.vue";
 import { authState, switchAccount } from "@/lib/auth";
 import type { RegisteredProject } from "@toonflow/server/auth";
@@ -137,6 +142,7 @@ const creating = ref(false);
 const opening = ref(false);
 const loadingProjects = ref(false);
 const accountsVisible = ref(false);
+const passwordVisible = ref(false);
 const switchingAccount = ref(false);
 const promptWorkspacePicker = ref<InstanceType<typeof workspacePicker>>();
 const relocationPicker = ref<InstanceType<typeof workspacePicker>>();
@@ -447,6 +453,12 @@ async function createProject(fromPrompt = true) {
     inset: 0;
     z-index: -1;
     pointer-events: none;
+  }
+
+  .accountFooter {
+    display: flex;
+    align-items: center;
+    padding: 0 clamp(20px, 4vw, 56px);
   }
 
   .arrowHint {

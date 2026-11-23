@@ -2,6 +2,19 @@
   <el-dialog v-model="visible" title="账号和项目管理" width="min(520px, 92vw)" appendToBody @open="loadMembers">
     <p v-if="message" role="status">{{ message }}</p>
     <el-tabs v-model="activeTab">
+      <el-tab-pane label="现有用户" name="users">
+        <el-scrollbar maxHeight="50vh">
+          <ul class="memberList">
+            <li v-for="member in members" :key="member.id">
+              <span>{{ member.username }} · {{ member.role === "admin" ? "管理员" : "成员" }}{{ member.disabled ? " · 已停用" : "" }}</span>
+              <span class="memberActions">
+                <el-button text :disabled="loading || saving" @click="passwordAccount = member">{{ member.id === authState.user?.id ? "修改密码" : "重置密码" }}</el-button>
+                <el-button v-if="member.id !== authState.user?.id" text :type="member.disabled ? 'success' : 'danger'" :disabled="loading || saving" @click="toggleMember(member)">{{ member.disabled ? "启用账号" : "停用账号" }}</el-button>
+              </span>
+            </li>
+          </ul>
+        </el-scrollbar>
+      </el-tab-pane>
       <el-tab-pane label="创建成员" name="members">
         <el-form labelPosition="top" @submit.prevent="addMember">
           <el-form-item label="账号（3–40 位，以英文字母或数字开头，可含点、下划线和短横线）">
@@ -44,6 +57,7 @@
       </el-tab-pane>
     </el-tabs>
   </el-dialog>
+  <passwordDialog v-if="visible && passwordAccount" :account="passwordAccount" @close="passwordAccount = undefined" />
 </template>
 
 <script setup lang="ts">
@@ -52,10 +66,12 @@ import { computed, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import type { AuthUser, ProjectOwnership } from "@toonflow/server/auth";
 import { authState } from "@/lib/auth";
+import passwordDialog from "./passwordDialog.vue";
 
 const visible = defineModel<boolean>({ default: false });
 const emit = defineEmits<{ projectsChanged: [] }>();
-const activeTab = ref<"members" | "register" | "transfer">("members");
+const activeTab = ref<"users" | "members" | "register" | "transfer">("users");
+const passwordAccount = ref<AuthUser>();
 const message = ref("");
 const loading = ref(false);
 const saving = ref(false);
@@ -75,6 +91,7 @@ const validUsername = computed(() => /^[a-zA-Z0-9][a-zA-Z0-9_.-]{2,39}$/.test(us
 watch(visible, open => {
   if (open) return;
   password.value = "";
+  passwordAccount.value = undefined;
   message.value = "";
   newOwnerId.value = "";
 });
@@ -121,6 +138,25 @@ async function addMember() {
   finally { saving.value = false; }
 }
 
+async function toggleMember(member: AuthUser) {
+  const disabled = !member.disabled;
+  const action = disabled ? "停用" : "启用";
+  const confirmed = await ElMessageBox.confirm(
+    `${disabled ? "停用后该账号将立即退出所有设备，且不能登录" : "启用后该账号可以重新登录"}。确定${action} ${member.username} 吗？`,
+    `${action}账号`,
+    { type: disabled ? "warning" : "info", confirmButtonText: action, cancelButtonText: "取消" },
+  ).then(() => true, () => false);
+  if (!confirmed || !visible.value || saving.value) return;
+  saving.value = true;
+  message.value = "";
+  try {
+    const { data } = await axios.put<{ data: AuthUser }>("/api/auth/setStatus", { userId: member.id, disabled });
+    members.value = members.value.map(item => item.id === member.id ? data.data : item);
+    message.value = `${member.username} 已${action}`;
+  } catch (error) { showError(error); }
+  finally { saving.value = false; }
+}
+
 async function register() {
   if (saving.value || !ownerId.value || !path.value) return;
   saving.value = true;
@@ -160,3 +196,25 @@ async function transfer() {
   } finally { saving.value = false; }
 }
 </script>
+
+<style scoped lang="scss">
+.memberList {
+  margin: 0;
+  padding: 0;
+
+  li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 6px 0;
+    overflow-wrap: anywhere;
+  }
+
+  .memberActions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 4px;
+  }
+}
+</style>

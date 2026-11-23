@@ -6,6 +6,7 @@ const embeddedResources = new Set(["GET /api/nodes/files", "GET /api/ext/read", 
 
 const memberRoutes = new Set([
   "POST /api/auth/logout",
+  "PUT /api/auth/changePassword",
   "GET /api/projects/list",
   "POST /api/projects/create",
   "POST /api/projects/open",
@@ -61,6 +62,8 @@ const memberRoutes = new Set([
 const adminRoutes = new Set([
   "GET /api/auth/members",
   "POST /api/auth/createMember",
+  "PUT /api/auth/resetPassword",
+  "PUT /api/auth/setStatus",
   "POST /api/projects/register",
   "GET /api/projects/ownership",
   "PUT /api/projects/transferOwnership",

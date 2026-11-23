@@ -75,3 +75,8 @@ export async function switchAccount() {
   await axios.post("/api/auth/logout");
   reloadForSession("/login");
 }
+
+export async function changeOwnPassword(currentPassword: string, newPassword: string) {
+  await axios.put("/api/auth/changePassword", { currentPassword, newPassword });
+  reloadForSession("/login");
+}

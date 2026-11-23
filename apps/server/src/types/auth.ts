@@ -1,4 +1,4 @@
-export type AuthUser = { id: string; username: string; role: "admin" | "member" };
+export type AuthUser = { id: string; username: string; role: "admin" | "member"; disabled: boolean };
 export type AuthState = { enabled: boolean; user: AuthUser | null };
 
 export type RegisteredProject = {
