@@ -7,9 +7,12 @@ export function showNodeError(error: unknown, title: string) {
   const detail = (error as { response?: { data?: { message?: unknown } } })?.response?.data?.message;
   const message = typeof detail === "string" && detail.trim() ? detail
     : error instanceof Error ? error.message : typeof error === "string" ? error : title;
+  const titleWithDetail = message && message !== title
+    ? `${title}：${message.replace(/\s+/g, " ").slice(0, 240)}`
+    : title;
   const controller = new AbortController();
   ElNotification({
-    title,
+    title: titleWithDetail,
     type: "error",
     duration: 0,
     customClass: "nodeErrorNotification",
