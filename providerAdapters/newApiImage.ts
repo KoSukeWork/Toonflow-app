@@ -24,6 +24,17 @@ type Context = {
   tool: { fetch: typeof globalThis.fetch; errorMessage(value: unknown): string };
 };
 
+function errorDetail(context: Context, value: unknown, apiKey: string): string {
+  let detail = context.tool.errorMessage(value);
+  if (!detail && value && typeof value === "object" && "message" in value && typeof value.message === "string") detail = value.message;
+  if (!detail && typeof value === "string") detail = value.trim();
+  if (!detail) return "未返回具体错误原因";
+  return detail.replaceAll(apiKey, "••••••")
+    .replace(/Bearer\s+[^\s"'<>]+/gi, "Bearer ••••••")
+    .replace(/([?&](?:api[_-]?key|token|secret|password|authorization)\s*=)[^&#\s]*/gi, "$1••••••")
+    .slice(0, 4000);
+}
+
 function base64Bytes(value: string, label: string): Uint8Array {
   const content = value.replace(/\s/g, "");
   // ACT: 与宿主媒体文件限制保持一致，单个本地输入或输出最多100 MB；不是平台能力声明。
@@ -139,7 +150,7 @@ function imageFromResponse(raw: string, context: Context): string {
 export default {
   id: "newApiImage",
   label: "NewAPI GPT Image",
-  version: "2.0.0",
+  version: "2.1.0",
   readme: "依据newapi-imagegen skill及其newapi_responses_image.py脚本适配。通过配置的基础地址追加/responses，以Bearer密钥调用image_generation工具。支持文字画图和单张、多张参考图；参考图可使用HTTP(S)地址、Base64或内存字节，具体格式及数量限制由平台校验。当前仅启用已确认的默认参数：1024x1024、1:1、high画质、PNG格式。调用模型初始值沿用当前Codex配置的gpt-6.1-sol，可在表单修改；此字段是Responses调用模型，图片工具不传model、background或action，由平台选择默认图片模型和行为。与skill一致，取首个image_generation_call.result作为最终图片；不返回预览图或任务编号。平台地址和密钥由表单填写，不读取本机Codex配置或凭据文件。单次最多等待15分钟，不自动重试；本地单图及结果上限100 MB，完整响应读取上限200 MB。不支持蒙版、组图数量控制或额外参数。",
   rules: [
     {
@@ -213,13 +224,16 @@ export default {
     const controller = new AbortController();
     const signal = this.signal ? AbortSignal.any([this.signal, controller.signal]) : controller.signal;
     const timeout = setTimeout(() => controller.abort(), 900_000);
+    let stage = "准备请求";
     try {
       const content: Record<string, string>[] = [{ type: "input_text", text: request.prompt.trim() }];
       for (const [index, input] of (request.images ?? []).entries()) {
+        stage = `处理第${index + 1}张参考图`;
         signal.throwIfAborted();
         content.push({ type: "input_image", image_url: imageReference(input, index) });
       }
       signal.throwIfAborted();
+      stage = "发送图片生成请求";
       const response = await this.tool.fetch(`${baseUrl}/responses`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -231,21 +245,25 @@ export default {
         }),
         signal,
       });
+      stage = "读取平台响应";
       const raw = await responseText(response, signal);
       signal.throwIfAborted();
       if (!response.ok) {
-        const detail = this.tool.errorMessage(raw);
-        throw new Error(`图片生成请求失败：HTTP ${response.status}${detail ? `，${detail}` : ""}`);
+        const statusText = response.statusText?.trim();
+        const detail = errorDetail(this, raw, apiKey);
+        throw new Error(`HTTP ${response.status}${statusText ? ` ${statusText}` : ""}（POST /responses）：${detail}`);
       }
+      stage = "解析平台图片结果";
       const bytes = base64Bytes(imageFromResponse(raw, this), "生成图片");
       const pngSignature = [137, 80, 78, 71, 13, 10, 26, 10];
+      stage = "校验生成图片";
       if (!pngSignature.every((value, index) => bytes[index] === value)) throw new Error("平台返回的图片不是约定的PNG格式");
       signal.throwIfAborted();
       return [{ mediaType: "image", type: "binary", data: bytes, mimeType: "image/png" }];
     } catch (error) {
       this.signal?.throwIfAborted();
       if (controller.signal.aborted) throw new Error("图片生成等待超过15分钟，请先在平台核实此次调用是否完成，避免重复付费");
-      throw new Error(this.tool.errorMessage(error) || "图片生成失败，请检查网络和供应商配置");
+      throw new Error(`GPT Image ${stage}失败：${errorDetail(this, error, apiKey)}`);
     } finally {
       clearTimeout(timeout);
     }
